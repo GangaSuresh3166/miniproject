@@ -14,6 +14,11 @@
     opacity: 1;
 }
 /*** Spinner End ***/
+.card:hover {
+  transform: translateY(-3px);
+  transition: 0.3s ease;
+  box-shadow: 0 4px 15px rgba(255, 215, 64, 0.2);
+}
 
 .back-to-top {
     position: fixed;

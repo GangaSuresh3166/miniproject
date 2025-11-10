@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if supplier %}Edit{% else %}Add{% endif %} Supplier — Admin Dashboard</title>
+
+    <!-- Bootstrap & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .card {
+            border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .form-label {
+            font-weight: 500;
+        }
+        .btn-save {
+            background-color: #0d6efd;
+            color: white;
+        }
+        .btn-save:hover {
+            background-color: #0b5ed7;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg bg-primary navbar-dark px-4">
+        <a class="navbar-brand fw-bold" href="#">Admin Dashboard</a>
+        <div class="ms-auto">
+            <a href="{% url 'admin_home' %}" class="btn btn-light btn-sm">🏠 Home</a>
+            <a href="{% url 'logout' %}" class="btn btn-danger btn-sm">Logout</a>
+        </div>
+    </nav>
+
+    <!-- Page Content -->
+    <div class="container my-5">
+        <div class="card p-4 mx-auto" style="max-width: 700px;">
+            <h3 class="fw-bold text-center text-primary mb-4">
+                {% if supplier %}✏️ Edit Supplier{% else %}➕ Add New Supplier{% endif %}
+            </h3>
+
+            <form method="POST">
+                {% csrf_token %}
+
+                <div class="row g-3">
+                    <div class="col-md-12">
+                        <label class="form-label">Supplier Name</label>
+                        <input type="text" name="name" class="form-control" placeholder="Enter supplier name"
+                               value="{{ supplier.name|default:'' }}" required>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-control" placeholder="example@mail.com"
+                               value="{{ supplier.email|default:'' }}">
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Phone</label>
+                        <input type="text" name="phone" class="form-control" placeholder="Enter phone number"
+                               value="{{ supplier.phone|default:'' }}">
+                    </div>
+
+                    <div class="col-md-12">
+                        <label class="form-label">Address</label>
+                        <textarea name="address" class="form-control" rows="3"
+                                  placeholder="Enter supplier address">{{ supplier.address|default:'' }}</textarea>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label">Status</label>
+                        <select name="is_active" class="form-select">
+                            <option value="True" {% if supplier.is_active %}selected{% endif %}>Active</option>
+                            <option value="False" {% if supplier and not supplier.is_active %}selected{% endif %}>Inactive</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Buttons -->
+                <div class="d-flex justify-content-between mt-4">
+                    <a href="{% url 'supplier_list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> Back
+                    </a>
+
+                    <a href="{% url 'admin_home' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-house-door"></i> Home
+                    </a>
+
+                    <button type="submit" class="btn btn-save">
+                        {% if supplier %}<i class="bi bi-save"></i> Update{% else %}<i class="bi bi-check-circle"></i> Save{% endif %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
