@@ -62,7 +62,7 @@ EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = "gangasuresh3166@gmail.com"
-EMAIL_HOST_PASSWORD = "your-app-password"
+EMAIL_HOST_PASSWORD = "vadl qsxt ioyw wxlg"
 DEFAULT_FROM_EMAIL = "gangasuresh3166@gmail.com"
 
 
@@ -169,3 +169,4 @@ MESSAGE_TAGS = {
     messages.ERROR: "danger",
 }
 
+AUTH_USER_MODEL = 'app.User'

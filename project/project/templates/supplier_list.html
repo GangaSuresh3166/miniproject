@@ -1,117 +1,272 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supplier Management — Admin Dashboard</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Suppliers — Admin Dashboard</title>
 
-    <!-- Bootstrap & Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
-    <style>
-        body {
-            background-color: #f8f9fa;
-        }
-        .card {
-            border-radius: 15px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        }
-        .table thead {
-            background-color: #0d6efd;
-            color: white;
-        }
-        .btn-add {
-            background-color: #0d6efd;
-            color: white;
-        }
-        .btn-add:hover {
-            background-color: #0b5ed7;
-        }
-    </style>
+  <style>
+    body {
+      background: radial-gradient(circle at top left, #0d1117, #000);
+      color: #e5e7eb;
+      font-family: 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+
+    nav.navbar {
+      background: linear-gradient(90deg, #111827, #1f2937);
+    }
+
+    .navbar-brand {
+      color: #fff !important;
+    }
+
+    .table-container {
+      background: rgba(17, 24, 39, 0.92);
+      border-radius: 20px;
+      padding: 30px;
+      box-shadow: 0 0 25px rgba(0, 0, 0, 0.6);
+    }
+
+    thead tr {
+      background: #0f3d5e;
+      color: #fff;
+    }
+
+    tbody tr {
+      background: rgba(31, 41, 55, 0.85);
+      transition: .25s ease;
+    }
+
+    tbody tr:hover {
+      background: rgba(59, 130, 246, 0.18);
+      transform: translateY(-2px);
+    }
+
+    .modal-content {
+      background: rgba(17, 24, 39, 0.98);
+      color: #f3f4f6;
+      border-radius: 0.9rem;
+    }
+
+    .modal-title {
+      color: #60a5fa;
+    }
+
+    .btn-close-white {
+      filter: invert(1) brightness(200%);
+    }
+
+    .action-btn {
+      border-radius: 8px !important;
+    }
+  </style>
 </head>
+
 <body>
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg bg-primary navbar-dark px-4">
-        <a class="navbar-brand fw-bold" href="#">Admin Dashboard</a>
-        <div class="ms-auto">
-            <a href="{% url 'admin_home' %}" class="btn btn-light btn-sm">🏠 Home</a>
-            <a href="{% url 'logout' %}" class="btn btn-danger btn-sm">Logout</a>
-        </div>
-    </nav>
 
-    <!-- Page Content -->
-    <div class="container my-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h3 class="fw-bold text-primary">🏭 Manage Suppliers</h3>
-            <a href="{% url 'add_supplier' %}" class="btn btn-add">
-                <i class="bi bi-person-plus"></i> Add New Supplier
-            </a>
-        </div>
-
-        <div class="card p-3">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Supplier Name</th>
-                            <th>Email</th>
-                            <th>Phone</th>
-                            <th>Address</th>
-                            <th>Date Added</th>
-                            <th>Status</th>
-                            <th class="text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for supplier in suppliers %}
-                        <tr>
-                            <td>{{ forloop.counter }}</td>
-                            <td>{{ supplier.name }}</td>
-                            <td>{{ supplier.email }}</td>
-                            <td>{{ supplier.phone }}</td>
-                            <td>{{ supplier.address }}</td>
-                            <td>{{ supplier.created_at|date:"d M Y" }}</td>
-                            <td>
-                                {% if supplier.is_active %}
-                                    <span class="badge bg-success">Active</span>
-                                {% else %}
-                                    <span class="badge bg-secondary">Inactive</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-center">
-                                <a href="{% url 'edit_supplier' supplier.id %}" class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-pencil-square"></i>
-                                </a>
-                                <a href="{% url 'delete_supplier' supplier.id %}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this supplier?');">
-                                    <i class="bi bi-trash"></i>
-                                </a>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="8" class="text-center text-muted py-4">No suppliers found.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Back Buttons -->
-        <div class="d-flex justify-content-between mt-4">
-            <a href="{% url 'admin_home' %}" class="btn btn-outline-primary">
-                <i class="bi bi-arrow-left"></i> Back to Home
-            </a>
-            <a href="{% url 'supplier_list' %}" class="btn btn-outline-secondary">
-                <i class="bi bi-arrow-repeat"></i> Refresh
-            </a>
-        </div>
+  <!-- NAVBAR -->
+  <nav class="navbar navbar-expand-lg px-4">
+    <span class="navbar-brand fw-bold">
+      <i class="bi bi-people-fill me-2"></i>Admin Dashboard
+    </span>
+    <div class="ms-auto">
+      <a href="{% url 'supplier_add' %}" class="btn btn-light btn-sm me-2 action-btn">
+        <i class="bi bi-person-plus-fill me-1"></i>Add Supplier
+      </a>
+      <a href="{% url 'admin_home' %}" class="btn btn-light btn-sm action-btn">
+        <i class="bi bi-house-door-fill me-1"></i>Back
+      </a>
     </div>
+  </nav>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <div class="container mt-5">
+    <div class="table-container">
+
+      <h3 class="text-center fw-bold mb-4 text-info">
+        <i class="bi bi-card-list me-2"></i>Supplier List
+      </h3>
+
+      {% if messages %}
+      {% for message in messages %}
+      <div class="alert alert-{{ message.tags }} text-center">{{ message }}</div>
+      {% endfor %}
+      {% endif %}
+
+      <div class="table-responsive">
+        <table class="table align-middle text-light table-hover">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Supplier</th>
+              <th>Company</th>
+              <th>Phone</th>
+              <th>Email</th>
+              <th>GST</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {% for s in suppliers %}
+            <tr>
+              <td>{{ forloop.counter }}</td>
+              <td>{{ s.supplier_name }}</td>
+              <td>{{ s.company_name|default:"—" }}</td>
+              <td>{{ s.phone }}</td>
+              <td>{{ s.email|default:"—" }}</td>
+              <td>{{ s.gst_number|default:"—" }}</td>
+
+              <td class="text-center">
+                <!-- VIEW -->
+                <button type="button"
+                  class="btn btn-sm btn-outline-info action-btn"
+                  data-bs-toggle="modal"
+                  data-bs-target="#supplierViewModal"
+                  data-id="{{ s.id }}"
+                  data-name="{{ s.supplier_name|escapejs }}"
+                  data-company="{{ s.company_name|default:'—'|escapejs }}"
+                  data-email="{{ s.email|default:'—' }}"
+                  data-phone="{{ s.phone }}"
+                  data-alt="{{ s.alt_phone|default:'—' }}"
+                  data-address="{{ s.address|escapejs }}"
+                  data-city="{{ s.city|default:'—' }}"
+                  data-state="{{ s.state|default:'—' }}"
+                  data-country="{{ s.country }}"
+                  data-postal="{{ s.postal_code|default:'—' }}"
+                  data-gst="{{ s.gst_number|default:'—' }}"
+                  data-pan="{{ s.pan_number|default:'—' }}"
+                  data-bank="{{ s.bank_name|default:'—' }}"
+                  data-ac="{{ s.account_number|default:'—' }}"
+                  data-ifsc="{{ s.ifsc_code|default:'—' }}"
+                  data-branch="{{ s.branch|default:'—' }}"
+                  data-website="{{ s.website|default:'—' }}"
+                  data-notes="{{ s.notes|default:'—'|escapejs }}"
+                >
+                  <i class="bi bi-eye"></i>
+                </button>
+
+                <!-- EDIT -->
+                <a href="{% url 'supplier_edit' s.id %}" class="btn btn-sm btn-outline-primary ms-1 action-btn">
+                  <i class="bi bi-pencil-square"></i>
+                </a>
+
+                <!-- DELETE -->
+                <a href="{% url 'supplier_delete' s.id %}"
+                  class="btn btn-sm btn-outline-danger ms-1 action-btn"
+                  onclick="return confirm('Delete this supplier?');">
+                  <i class="bi bi-trash"></i>
+                </a>
+              </td>
+            </tr>
+
+            {% empty %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">
+                <i class="bi bi-info-circle me-1"></i>No suppliers found.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+
+        </table>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- VIEW MODAL -->
+  <div class="modal fade" id="supplierViewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-person-vcard me-2"></i>Supplier Details</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="row g-3">
+
+            <div class="col-md-6"><strong>Name:</strong> <span id="m-name"></span></div>
+            <div class="col-md-6"><strong>Company:</strong> <span id="m-company"></span></div>
+            <div class="col-md-6"><strong>Email:</strong> <span id="m-email"></span></div>
+            <div class="col-md-6"><strong>Phone:</strong> <span id="m-phone"></span></div>
+            <div class="col-md-6"><strong>Alt Phone:</strong> <span id="m-alt"></span></div>
+
+            <div class="col-md-12"><strong>Address:</strong> <span id="m-address"></span></div>
+            <div class="col-md-4"><strong>City:</strong> <span id="m-city"></span></div>
+            <div class="col-md-4"><strong>State:</strong> <span id="m-state"></span></div>
+            <div class="col-md-4"><strong>Country:</strong> <span id="m-country"></span></div>
+            <div class="col-md-6"><strong>Postal Code:</strong> <span id="m-postal"></span></div>
+
+            <div class="col-md-6"><strong>GST:</strong> <span id="m-gst"></span></div>
+            <div class="col-md-6"><strong>PAN:</strong> <span id="m-pan"></span></div>
+
+            <div class="col-md-6"><strong>Bank:</strong> <span id="m-bank"></span></div>
+            <div class="col-md-6"><strong>Account No:</strong> <span id="m-ac"></span></div>
+            <div class="col-md-6"><strong>IFSC:</strong> <span id="m-ifsc"></span></div>
+            <div class="col-md-6"><strong>Branch:</strong> <span id="m-branch"></span></div>
+
+
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <a id="m-edit-link" class="btn btn-outline-primary action-btn">Edit</a>
+          <button class="btn btn-secondary action-btn" data-bs-dismiss="modal">Close</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const modal = document.getElementById('supplierViewModal');
+
+      modal.addEventListener('show.bs.modal', event => {
+        const d = event.relatedTarget.dataset;
+
+        const fill = (id, val) =>
+          document.getElementById(id).textContent = val || "—";
+
+        fill("m-name", d.name);
+        fill("m-company", d.company);
+        fill("m-email", d.email);
+        fill("m-phone", d.phone);
+        fill("m-alt", d.alt);
+
+        fill("m-address", d.address);
+        fill("m-city", d.city);
+        fill("m-state", d.state);
+        fill("m-country", d.country);
+        fill("m-postal", d.postal);
+
+        fill("m-gst", d.gst);
+        fill("m-pan", d.pan);
+
+        fill("m-bank", d.bank);
+        fill("m-ac", d.ac);
+        fill("m-ifsc", d.ifsc);
+        fill("m-branch", d.branch);
+
+
+        document.getElementById("m-edit-link").href =
+          '{% url "supplier_edit" 0 %}'.replace('/0/', '/' + d.id + '/');
+
+      });
+    });
+  </script>
+
 </body>
-</html>
 
+</html>

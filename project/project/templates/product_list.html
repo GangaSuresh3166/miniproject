@@ -1,112 +1,258 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Product List — Admin Dashboard</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Products — Admin Dashboard</title>
 
-    <!-- Bootstrap & Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- Bootstrap & Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
-    <style>
-        body {
-            background-color: #f8f9fa;
-        }
-
-        .card {
-            border-radius: 15px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-        }
-
-        .table thead {
-            background-color: #0d6efd;
-            color: white;
-        }
-
-        .btn-add {
-            background-color: #0d6efd;
-            color: white;
-        }
-
-        .btn-add:hover {
-            background-color: #0b5ed7;
-        }
-    </style>
+  <style>
+    body {
+      background: radial-gradient(circle at top left, #0d1117, #000);
+      color: #e5e7eb;
+      font-family: 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+    nav.navbar { background: linear-gradient(90deg,#111827,#1f2937); }
+    .navbar-brand { color:#fff !important; }
+    .table-container {
+      background: rgba(17,24,39,0.9);
+      backdrop-filter: blur(10px);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 0 25px rgba(0,0,0,0.6);
+    }
+    thead tr { background:#1e3a8a; color:#fff; }
+    tbody tr { background: rgba(31,41,55,0.9); transition: .25s; }
+    tbody tr:hover { transform: translateY(-2px); background: rgba(59,130,246,0.12); }
+    .modal-content { background: rgba(17,24,39,0.98); color:#f3f4f6; border-radius: 0.8rem; }
+    .modal-title { color:#60a5fa; }
+    .btn-close-white { filter: invert(1) brightness(200%); }
+  </style>
 </head>
-
 <body>
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg bg-primary navbar-dark px-4">
-        <a class="navbar-brand fw-bold" href="#">Admin Dashboard</a>
-        <div class="ms-auto">
-            <a href="{% url 'admin_home' %}" class="btn btn-light btn-sm">🏠 Home</a>
-            <a href="{% url 'logout' %}" class="btn btn-danger btn-sm">Logout</a>
-        </div>
-    </nav>
-    {% if messages %}
-    <div class="container mt-3">
+  <!-- NAVBAR -->
+  <nav class="navbar navbar-expand-lg px-4">
+    <a class="navbar-brand" href="#"><i class="bi bi-speedometer2 me-2"></i>Admin Dashboard</a>
+    <div class="ms-auto">
+      <a href="{% url 'product_add' %}" class="btn btn-light btn-sm me-2"><i class="bi bi-plus-circle me-1"></i>ADD PRODUCT</a>
+      <a href="{% url 'admin_home' %}" class="btn btn-light btn-sm"><i class="bi bi-house-door-fill me-1"></i>BACK</a>
+    </div>
+  </nav>
+
+  <div class="container mt-5">
+    <div class="table-container">
+      <h3 class="text-center fw-bold mb-4"><i class="bi bi-box-seam me-2"></i>PRODUCT LIST</h3>
+
+      {% if messages %}
         {% for message in messages %}
-        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
+          <div class="alert text-center">{{ message }}</div>
         {% endfor %}
+      {% endif %}
+
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Product Name</th>
+              <th>Category</th>
+              <th>Subcategory</th>
+              <th>Brand</th>
+              <th>Supplier</th>
+              <th>Stock</th>
+              <th>Price (₹)</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {% for product in products %}
+            <tr>
+              <td>{{ forloop.counter }}</td>
+
+              <td>{{ product.name }}</td>
+
+              <td>{{ product.category.category_name }}</td>
+
+              <td>
+                {% if product.subcategory %}
+                  {{ product.subcategory.subcategory_name }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+
+              <td>{{ product.brand|default:"—" }}</td>
+              <td>{{ product.supplier_name|default:"—" }}</td>
+              <td>{{ product.quantity }}</td>
+              <td>{{ product.selling_price }}</td>
+
+              <td>
+                {% if product.status == "active" %}
+                  <span class="badge bg-success">Active</span>
+                {% elif product.status == "inactive" %}
+                  <span class="badge bg-secondary">Inactive</span>
+                {% else %}
+                  <span class="badge bg-danger">Discontinued</span>
+                {% endif %}
+              </td>
+
+              <td class="text-center">
+
+                <!-- VIEW -->
+                <button type="button"
+                        class="btn btn-sm btn-outline-info view-product-btn"
+                        data-bs-toggle="modal"
+                        data-bs-target="#productViewModal"
+
+                        data-id="{{ product.id }}"
+                        data-name="{{ product.name|escapejs }}"
+                        data-category="{{ product.category.category_name|escapejs }}"
+                        data-subcategory="{{ product.subcategory.subcategory_name|default_if_none:'—'|escapejs }}"
+                        data-brand="{{ product.brand|default_if_none:''|escapejs }}"
+                        data-supplier="{{ product.supplier_name|default_if_none:''|escapejs }}"
+                        data-contact="{{ product.supplier_contact|default_if_none:''|escapejs }}"
+                        data-quantity="{{ product.quantity }}"
+                        data-reorder="{{ product.reorder_level }}"
+                        data-cost="{{ product.cost_price }}"
+                        data-sell="{{ product.selling_price }}"
+                        data-discount="{{ product.discount|default_if_none:'0' }}"
+                        data-tax="{{ product.tax|default_if_none:'0' }}"
+                        data-status="{{ product.status }}"
+                        data-description="{{ product.description|default_if_none:''|escapejs }}"
+                        data-notes="{{ product.notes|default_if_none:''|escapejs }}"
+                >
+                  <i class="bi bi-eye"></i>
+                </button>
+
+                <a href="{% url 'product_edit' product.id %}" class="btn btn-sm btn-outline-primary">
+                  <i class="bi bi-pencil-square"></i>
+                </a>
+
+                <a href="{% url 'product_delete' product.id %}" class="btn btn-sm btn-outline-danger ms-1"
+                   onclick="return confirm('Are you sure you want to delete this product?');">
+                  <i class="bi bi-trash"></i>
+                </a>
+              </td>
+            </tr>
+
+            {% empty %}
+            <tr>
+              <td colspan="10" class="text-center text-muted py-4">
+                <i class="bi bi-info-circle me-2"></i>No products found.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+
+        </table>
+      </div>
     </div>
-    {% endif %}
+
+    <div class="footer-note mt-3 text-center">
+      <i class="bi bi-lock-fill me-1"></i>Admin account hidden for security.
+    </div>
+  </div>
 
 
-    <!-- Page Content -->
-    <div class="container my-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h3 class="fw-bold text-primary">📦 All Products</h3>
-            <a href="{% url 'add_product' %}" class="btn btn-add"><i class="bi bi-plus-circle"></i> Add New
-                Product</a>
+  <!-- PRODUCT VIEW MODAL -->
+  <div class="modal fade" id="productViewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-box me-2"></i>Product Details
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
 
-        <div class="card p-3">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Product Name</th>
-                            <th>Category</th>
-                            <th>Supplier</th>
-                            <th>Stock</th>
-                            <th>Price</th>
-                            <th class="text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for product in products %}
-                        <tr>
-                            <td>{{ forloop.counter }}</td>
-                            <td>{{ product.name }}</td>
-                            <td>{{ product.category.name }}</td>
-                            <td>{{ product.supplier.name }}</td>
-                            <td>{{ product.stock }}</td>
-                            <td>₹{{ product.price }}</td>
-                            <td class="text-center">
-                                <a href="{% url 'edit_product' product.id %}" class="btn btn-sm btn-outline-primary"><i
-                                        class="bi bi-pencil-square"></i></a>
-                                <a href="{% url 'delete_product' product.id %}" class="btn btn-sm btn-outline-danger"
-                                    onclick="return confirm('Delete this product?')"><i class="bi bi-trash"></i></a>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="7" class="text-center text-muted py-4">No products available.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+        <div class="modal-body">
+          <div class="row g-3">
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+            <div class="col-md-6"><strong>Name:</strong> <span id="m-name"></span></div>
+            <div class="col-md-6"><strong>Category:</strong> <span id="m-category"></span></div>
+            <div class="col-md-6"><strong>Subcategory:</strong> <span id="m-subcategory"></span></div>
+
+            <div class="col-md-6"><strong>Brand:</strong> <span id="m-brand"></span></div>
+            <div class="col-md-6"><strong>Supplier:</strong> <span id="m-supplier"></span></div>
+            <div class="col-md-6"><strong>Contact:</strong> <span id="m-contact"></span></div>
+
+            <div class="col-md-6"><strong>Quantity:</strong> <span id="m-quantity"></span></div>
+            <div class="col-md-6"><strong>Reorder Level:</strong> <span id="m-reorder"></span></div>
+
+            <div class="col-md-6"><strong>Cost Price:</strong> ₹<span id="m-cost"></span></div>
+            <div class="col-md-6"><strong>Selling Price:</strong> ₹<span id="m-sell"></span></div>
+
+            <div class="col-md-6"><strong>Discount:</strong> <span id="m-discount"></span>%</div>
+            <div class="col-md-6"><strong>Tax:</strong> <span id="m-tax"></span>%</div>
+
+            <div class="col-md-6"><strong>Status:</strong> <span id="m-status"></span></div>
+            <div class="col-md-12"><strong>Description:</strong> <span id="m-description"></span></div>
+            <div class="col-md-12"><strong>Notes:</strong> <span id="m-notes"></span></div>
+
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <a id="m-edit-link" class="btn btn-outline-primary">Edit</a>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const modalEl = document.getElementById('productViewModal');
+
+      modalEl.addEventListener('show.bs.modal', function (event) {
+        const button = event.relatedTarget;
+        if (!button) return;
+        const d = button.dataset;
+
+        const setText = (id, value) => {
+          const el = document.getElementById(id);
+          if (el) el.textContent = value || '-';
+        };
+
+        setText('m-name', d.name);
+        setText('m-category', d.category);
+        setText('m-subcategory', d.subcategory);
+        setText('m-brand', d.brand);
+        setText('m-supplier', d.supplier);
+        setText('m-contact', d.contact);
+
+        setText('m-quantity', d.quantity);
+        setText('m-reorder', d.reorder);
+
+        setText('m-cost', d.cost);
+        setText('m-sell', d.sell);
+        setText('m-discount', d.discount);
+        setText('m-tax', d.tax);
+
+        setText('m-status', d.status);
+        setText('m-description', d.description);
+        setText('m-notes', d.notes);
+
+        // update edit button
+        const editLink = document.getElementById('m-edit-link');
+        if (editLink && d.id) {
+          editLink.href = '{% url "product_edit" 0 %}'.replace('/0/', '/' + d.id + '/');
+        }
+      });
+    });
+  </script>
+
 </body>
-
 </html>

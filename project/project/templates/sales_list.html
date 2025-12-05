@@ -1,93 +1,237 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales List — Inventory System</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sales List — Admin Dashboard</title>
 
-    <!-- Bootstrap -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
-    <!-- Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root{
+      --card-bg: rgba(17,24,39,0.9);
+      --row-bg: rgba(31,41,55,0.9);
+      --accent: #3b82f6;
+      --muted: #9ca3af;
+    }
+
+    html,body{
+      height:100%;
+      background: radial-gradient(circle at top left, #0d1117, #000);
+      color:#e5e7eb;
+      font-family: "Segoe UI", Roboto, system-ui, -apple-system, "Helvetica Neue", Arial;
+    }
+
+    nav.navbar {
+      background: linear-gradient(90deg,#111827,#1f2937);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    }
+
+    .navbar-brand { color: #fff !important; font-weight:600; }
+    .table-container {
+      background: var(--card-bg);
+      border-radius: 14px;
+      padding: 28px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+
+    thead tr { background: linear-gradient(90deg,#1e3a8a,#1e40af); color:#fff; }
+    tbody tr { background: var(--row-bg); transition: transform .18s ease, background .18s ease; }
+    tbody tr:hover { transform: translateY(-3px); background: rgba(59,130,246,0.06); }
+
+    .modal-content { background: rgba(17,24,39,0.98); color: #f3f4f6; border-radius: 0.8rem; }
+    .modal-title { color: var(--accent); font-weight:600; }
+    .badge-paid { background:#10b981; color:#fff; }
+    .badge-pending { background:#f59e0b; color:#111827; }
+    .badge-credit { background:#0ea5e9; color:#04203a; }
+
+    .empty-state { text-align:center; padding: 36px 20px; color:var(--muted); }
+    .small-muted { color:var(--muted); font-size:.92rem; }
+    .table-sm th, .table-sm td { vertical-align: middle; }
+  </style>
 </head>
 
-<body class="bg-light">
+<body>
+  <!-- NAVBAR -->
+  <nav class="navbar navbar-expand-lg px-4">
+    <a class="navbar-brand" href="#"><i class="bi bi-receipt-cutoff me-2"></i>Admin Dashboard</a>
 
-<div class="container py-4">
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3 class="fw-bold">
-            <i class="bi bi-cart-check"></i> Sales Transactions
-        </h3>
-
-        <a href="{% url 'transactions' %}" class="btn btn-secondary">
-            <i class="bi bi-arrow-left"></i> Back to Transactions
-        </a>
+    <div class="ms-auto d-flex gap-2">
+      <a href="{% url 'sales_add' %}" class="btn btn-light btn-sm" title="Add new sale">
+        <i class="bi bi-plus-circle me-1"></i> Add Sale
+      </a>
+      <a href="{% url 'admin_home' %}" class="btn btn-light btn-sm" title="Back to admin home">
+        <i class="bi bi-house-door-fill me-1"></i> Back
+      </a>
     </div>
+  </nav>
 
-    <!-- Search Bar -->
-    <div class="card mb-4 shadow-sm border-0">
-        <div class="card-body">
-            <form method="GET">
-                <div class="input-group">
-                    <input type="text" name="q" class="form-control" placeholder="Search by customer or date..."
-                           value="{{ request.GET.q }}">
-                    <button class="btn btn-primary">
-                        <i class="bi bi-search"></i> Search
-                    </button>
-                </div>
-            </form>
+  <div class="container my-5">
+    <div class="table-container">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h3 class="m-0 fw-bold"><i class="bi bi-receipt me-2"></i>Sales List</h3>
+        <small class="small-muted">Showing {{ sales|length }} record{{ sales|length|pluralize }}</small>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table align-middle table-sm mb-0">
+          <thead>
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Invoice</th>
+              <th scope="col">Date</th>
+              <th scope="col">Customer</th>
+              <th scope="col" class="text-end">Subtotal</th>
+              <th scope="col" class="text-end">Tax</th>
+              <th scope="col" class="text-end">Grand Total</th>
+              <th scope="col">Status</th>
+              <th scope="col" class="text-center">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {% if sales %}
+              {% for sale in sales %}
+              <tr>
+                <td>{{ forloop.counter }}</td>
+                <td class="fw-medium">{{ sale.invoice_no }}</td>
+                <td>
+                  {# format date if it's a date/datetime object; fallback to raw #}
+                  {% if sale.date %}
+                    {{ sale.date|date:"Y-m-d" }}
+                  {% else %}
+                    <span class="small-muted">—</span>
+                  {% endif %}
+                </td>
+                <td>{{ sale.customer_name|default:"Walk-in Customer" }}</td>
+
+                <td class="text-end">₹{{ sale.subtotal|floatformat:2 }}</td>
+                <td class="text-end">₹{{ sale.total_tax|floatformat:2 }}</td>
+                <td class="text-end"><strong>₹{{ sale.grand_total|floatformat:2 }}</strong></td>
+
+                <td>
+                  {% if sale.payment_status == "PAID" %}
+                    <span class="badge badge-paid" aria-label="Paid">Paid</span>
+                  {% elif sale.payment_status == "PENDING" %}
+                    <span class="badge badge-pending" aria-label="Pending">Pending</span>
+                  {% else %}
+                    <span class="badge badge-credit" aria-label="Credit">Credit</span>
+                  {% endif %}
+                </td>
+
+                <td class="text-center">
+                  <!-- View button opens modal; modal id uses safe prefix -->
+                  <button type="button"
+                          class="btn btn-sm btn-outline-info"
+                          data-bs-toggle="modal"
+                          data-bs-target="#saleModal-{{ sale.id }}"
+                          aria-label="View sale {{ sale.invoice_no }}">
+                    <i class="bi bi-eye"></i>
+                  </button>
+
+                  <a href="{% url 'sales_edit' sale.id %}" class="btn btn-sm btn-outline-primary" title="Edit">
+                    <i class="bi bi-pencil-square"></i>
+                  </a>
+
+                  <a href="{% url 'sales_delete' sale.id %}"
+                     class="btn btn-sm btn-outline-danger ms-1"
+                     onclick="return confirm('Delete this sale?');"
+                     title="Delete">
+                    <i class="bi bi-trash"></i>
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="9" class="empty-state">
+                  <div class="mb-2"><i class="bi bi-collection" style="font-size:28px;"></i></div>
+                  <div class="fw-semibold">No sales found</div>
+                  <div class="small-muted">You can add a sale using the <strong>Add Sale</strong> button above.</div>
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {% for sale in sales %}
+  <div class="modal fade" id="saleModal-{{ sale.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi bi-receipt me-2"></i>Sale Details — {{ sale.invoice_no }}
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
-    </div>
 
-    <!-- Sales Table -->
-    <div class="card shadow border-0">
-        <div class="card-body">
+        <div class="modal-body text-light">
+          <div class="row g-2 mb-3">
+            <div class="col-md-4"><strong>Invoice:</strong> <span class="small-muted ms-1">{{ sale.invoice_no }}</span></div>
+            <div class="col-md-4"><strong>Date:</strong> <span class="small-muted ms-1">{{ sale.date|date:"Y-m-d" }}</span></div>
+            <div class="col-md-4"><strong>Status:</strong> <span class="small-muted ms-1">{{ sale.payment_status }}</span></div>
 
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
-                <tr>
-                    <th>#</th>
-                    <th>Date</th>
-                    <th>Customer</th>
-                    <th>Total Amount (₹)</th>
-                    <th>Payment Mode</th>
-                    <th>Status</th>
+            <div class="col-md-6 mt-2"><strong>Customer:</strong> <span class="small-muted ms-1">{{ sale.customer_name }}</span></div>
+
+            <div class="col-md-4 mt-3"><strong>Subtotal:</strong> <span class="small-muted ms-1">₹{{ sale.subtotal|floatformat:2 }}</span></div>
+            <div class="col-md-4 mt-3"><strong>Total Tax:</strong> <span class="small-muted ms-1">₹{{ sale.total_tax|floatformat:2 }}</span></div>
+            <div class="col-md-4 mt-3"><strong>Grand Total:</strong> <span class="small-muted ms-1">₹{{ sale.grand_total|floatformat:2 }}</span></div>
+          </div>
+
+          <hr class="border-secondary">
+
+          <h5 class="text-info mb-3">Items</h5>
+
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered text-light mb-0">
+              <thead>
+                <tr class="small-muted">
+                  <th>Product</th>
+                  <th class="text-center">Qty</th>
+                  <th class="text-end">Price</th>
+                  <th class="text-center">Discount</th>
+                  <th class="text-center">Tax</th>
+                  <th class="text-end">Total</th>
                 </tr>
-                </thead>
-
-                <tbody>
-                {% for sale in sales %}
-                    <tr>
-                        <td>{{ forloop.counter }}</td>
-                        <td>{{ sale.date }}</td>
-                        <td>{{ sale.customer_name }}</td>
-                        <td class="fw-semibold">₹{{ sale.total_amount }}</td>
-                        <td>{{ sale.payment_mode }}</td>
-                        <td>
-                            {% if sale.status == "Paid" %}
-                                <span class="badge bg-success">Paid</span>
-                            {% else %}
-                                <span class="badge bg-warning text-dark">Pending</span>
-                            {% endif %}
-                        </td>
-                    </tr>
+              </thead>
+              <tbody>
+                {% for item in sale.items.all %}
+                <tr>
+                  <td>{{ item.product.name }}</td>
+                  <td class="text-center">{{ item.qty }}</td>
+                  <td class="text-end">₹{{ item.price|floatformat:2 }}</td>
+                  <td class="text-center">{{ item.discount|default:"0" }}%</td>
+                  <td class="text-center">{{ item.tax|default:"0" }}%</td>
+                  <td class="text-end">₹{{ item.total|floatformat:2 }}</td>
+                </tr>
                 {% empty %}
-                    <tr>
-                        <td colspan="6" class="text-center text-muted p-4">
-                            <i class="bi bi-exclamation-circle"></i> No sales records found.
-                        </td>
-                    </tr>
+                <tr>
+                  <td colspan="6" class="text-center small-muted">No items recorded for this sale.</td>
+                </tr>
                 {% endfor %}
-                </tbody>
-
+              </tbody>
             </table>
+          </div>
 
         </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+
+      </div>
     </div>
+  </div>
+  {% endfor %}
 
-</div>
-
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
+
 </html>

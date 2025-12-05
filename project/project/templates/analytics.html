@@ -1,0 +1,178 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sales vs Purchases Analytics</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            background-color: #0d1117;
+            padding: 40px;
+            font-family: "Segoe UI";
+        }
+        .chart-card {
+            background: #111827;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+        }
+        h2 {
+            color: #e5e7eb;
+        }
+        .btn-group button {
+            background: #1f2937;
+            color: #e5e7eb;
+            border: 1px solid #374151;
+            padding: 10px 18px;
+            margin-right: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .btn-group button:hover {
+            background: #374151;
+        }
+        .btn-active {
+            background: #2563eb !important;
+            border-color: #2563eb !important;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="chart-card">
+    <h2>Sales vs Purchases Analytics</h2>
+
+    <div class="btn-group" style="margin-bottom: 20px;">
+        <button id="barBtn" class="btn-active">Bar</button>
+        <button id="lineBtn">Line</button>
+        <button id="pieBtn">Pie</button>
+    </div>
+
+    <canvas id="analyticsChart" height="120"></canvas>
+</div>
+
+<script>
+const ctx = document.getElementById("analyticsChart").getContext("2d");
+
+// Convert Django JSON strings into JS arrays
+const salesLabels = {{ sales_labels }};
+const salesTotals = {{ sales_totals }};
+const purchaseTotals = {{ purchase_totals }};
+
+// Gradients for bar/line charts
+const gradientSales = ctx.createLinearGradient(0, 0, 0, 300);
+gradientSales.addColorStop(0, "rgba(96,165,250,1)");
+gradientSales.addColorStop(1, "rgba(96,165,250,0.2)");
+
+const gradientPurchase = ctx.createLinearGradient(0, 0, 0, 300);
+gradientPurchase.addColorStop(0, "rgba(52,211,153,1)");
+gradientPurchase.addColorStop(1, "rgba(52,211,153,0.2)");
+
+let currentChart;
+
+// Build charts dynamically
+function createChart(type) {
+    if (currentChart) currentChart.destroy();
+
+    let dataConfig;
+
+    if (type === "pie") {
+        // Pie chart uses SUM of totals
+        dataConfig = {
+            labels: ["Total Sales", "Total Purchases"],
+            datasets: [{
+                data: [
+                    salesTotals.reduce((a, b) => a + b, 0),
+                    purchaseTotals.reduce((a, b) => a + b, 0)
+                ],
+                backgroundColor: ["#60a5fa", "#34d399"],
+                borderColor: "#111827",
+                borderWidth: 3
+            }]
+        };
+    } else {
+        // Bar/Line charts
+        dataConfig = {
+            labels: salesLabels,
+            datasets: [
+                {
+                    label: "Sales",
+                    data: salesTotals,
+                    backgroundColor: type === "bar" ? gradientSales : "#60a5fa",
+                    borderColor: "#60a5fa",
+                    borderWidth: 3,
+                    fill: type === "line"
+                },
+                {
+                    label: "Purchases",
+                    data: purchaseTotals,
+                    backgroundColor: type === "bar" ? gradientPurchase : "#34d399",
+                    borderColor: "#34d399",
+                    borderWidth: 3,
+                    fill: type === "line"
+                }
+            ]
+        };
+    }
+
+    currentChart = new Chart(ctx, {
+        type: type,
+        data: dataConfig,
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { labels: { color: "#fff" } },
+                tooltip: {
+                    backgroundColor: "#1f2937",
+                    titleColor: "#fff",
+                    bodyColor: "#e5e7eb"
+                }
+            },
+            scales: type !== "pie" ? {
+                x: {
+                    ticks: { color: "#d1d5db" },
+                    grid: { color: "rgba(255,255,255,0.05)" }
+                },
+                y: {
+                    ticks: { color: "#d1d5db" },
+                    grid: { color: "rgba(255,255,255,0.05)" }
+                }
+            } : {}
+        }
+    });
+}
+
+// Default = BAR
+createChart("bar");
+
+// Button handlers
+document.getElementById("barBtn").onclick = () => {
+    activate("barBtn");
+    createChart("bar");
+};
+
+document.getElementById("lineBtn").onclick = () => {
+    activate("lineBtn");
+    createChart("line");
+};
+
+document.getElementById("pieBtn").onclick = () => {
+    activate("pieBtn");
+    createChart("pie");
+};
+
+// Button styling
+function activate(id) {
+    document.querySelectorAll(".btn-group button")
+        .forEach(btn => btn.classList.remove("btn-active"));
+
+    document.getElementById(id).classList.add("btn-active");
+}
+</script>
+
+</body>
+</html>
+

@@ -1,89 +1,309 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Purchase List — Inventory System</title>
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Purchases — Admin Dashboard</title>
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+  <style>
+    body {
+      background: radial-gradient(circle at top left, #0d1117, #000);
+      color: #e5e7eb;
+      font-family: 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+    nav.navbar { background: linear-gradient(90deg, #111827, #1f2937); }
+    .navbar-brand { color: #fff !important; }
+
+    .table-container {
+      background: rgba(17, 24, 39, 0.9);
+      backdrop-filter: blur(10px);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 0 25px rgba(0,0,0,0.6);
+    }
+
+    thead tr { background: #1e3a8a; color: #fff; }
+    tbody tr { background: rgba(31,41,55,0.9); transition: .25s; }
+    tbody tr:hover { transform: translateY(-2px); background: rgba(59,130,246,0.12); }
+
+    .modal-content {
+      background: rgba(17,24,39,0.98);
+      color: #f3f4f6;
+      border-radius: 0.8rem;
+    }
+    .modal-title { color: #60a5fa; }
+    .item-table th { color: #93c5fd; }
+  </style>
 </head>
 
-<body class="bg-light">
+<body>
 
-<div class="container py-4">
-
-    <h2 class="mb-4">📦 Purchase List</h2>
-
-    <!-- Search Bar -->
-    <form method="GET" class="mb-3">
-        <div class="input-group">
-            <input type="text" name="q" class="form-control" placeholder="Search purchase..." value="{{ request.GET.q }}">
-            <button class="btn btn-primary"><i class="bi bi-search"></i> Search</button>
-        </div>
-    </form>
-
-    <!-- Add Purchase Button -->
-    <div class="mb-3 text-end">
-        <a href="{% url 'add_purchase' %}" class="btn btn-success">
-            <i class="bi bi-plus-circle"></i> Add Purchase
-        </a>
+  <!-- NAVBAR -->
+  <nav class="navbar navbar-expand-lg px-4">
+    <a class="navbar-brand" href="#"><i class="bi bi-speedometer2 me-2"></i>Admin Dashboard</a>
+    <div class="ms-auto">
+      <a href="{% url 'purchase_add' %}" class="btn btn-light btn-sm me-2">
+        <i class="bi bi-plus-circle me-1"></i>ADD PURCHASE
+      </a>
+      <a href="{% url 'admin_home' %}" class="btn btn-light btn-sm">
+        <i class="bi bi-house-door-fill me-1"></i>BACK
+      </a>
     </div>
+  </nav>
 
-    <!-- Purchase List Table -->
-    <div class="card shadow-sm">
-        <div class="card-body">
+  <div class="container mt-5">
 
-            <table class="table table-bordered table-hover">
-                <thead class="table-dark">
-                    <tr>
-                        <th>#</th>
-                        <th>Invoice No</th>
-                        <th>Supplier</th>
-                        <th>Date</th>
-                        <th>Total Amount</th>
-                        <th>Status</th>
-                        <th width="120">Actions</th>
-                    </tr>
-                </thead>
+    <div class="table-container">
+      <h3 class="text-center fw-bold mb-4">
+        <i class="bi bi-cart-check me-2"></i>PURCHASE LIST
+      </h3>
 
-                <tbody>
-                    {% for purchase in purchases %}
-                    <tr>
-                        <td>{{ forloop.counter }}</td>
-                        <td>{{ purchase.invoice_no }}</td>
-                        <td>{{ purchase.supplier.name }}</td>
-                        <td>{{ purchase.date }}</td>
-                        <td>₹{{ purchase.total_amount }}</td>
-                        <td>
-                            {% if purchase.status == "Completed" %}
-                                <span class="badge bg-success">Completed</span>
-                            {% else %}
-                                <span class="badge bg-warning text-dark">Pending</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <a href="{% url 'edit_purchase' purchase.id %}" class="btn btn-sm btn-primary">
-                                <i class="bi bi-pencil-square"></i>
-                            </a>
-                            <a href="{% url 'delete_purchase' purchase.id %}" class="btn btn-sm btn-danger" 
-                               onclick="return confirm('Delete this purchase?');">
-                                <i class="bi bi-trash"></i>
-                            </a>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="7" class="text-center text-muted">No purchases found</td>
-                    </tr>
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert text-center">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Purchase No</th>
+              <th>Date</th>
+              <th>Supplier</th>
+              <th>Subtotal</th>
+              <th>Tax</th>
+              <th>Discount</th>
+              <th>Other</th>
+              <th>Total</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {% for purchase in purchases %}
+            <tr>
+              <td>{{ forloop.counter }}</td>
+              <td>{{ purchase.purchase_no }}</td>
+              <td>{{ purchase.date }}</td>
+              <td>{{ purchase.supplier }}</td>
+              <td>₹{{ purchase.subtotal }}</td>
+              <td>₹{{ purchase.tax_total }}</td>
+              <td>₹{{ purchase.discount_total }}</td>
+              <td>₹{{ purchase.other_charges }}</td>
+              <td><strong>₹{{ purchase.grand_total }}</strong></td>
+
+              <td>
+                {% if purchase.payment_status == "paid" %}
+                  <span class="badge bg-success">Paid</span>
+                {% elif purchase.payment_status == "pending" %}
+                  <span class="badge bg-warning text-dark">Pending</span>
+                {% else %}
+                  <span class="badge bg-info">Partial</span>
+                {% endif %}
+              </td>
+
+              <td class="text-center">
+
+                <!-- VIEW button -->
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-info view-btn"
+                  data-bs-toggle="modal"
+                  data-bs-target="#purchaseViewModal"
+                  data-id="{{ purchase.id }}"
+                  data-no="{{ purchase.purchase_no }}"
+                  data-date="{{ purchase.date }}"
+                  data-supplier="{{ purchase.supplier|escapejs }}"
+                  data-subtotal="{{ purchase.subtotal }}"
+                  data-tax="{{ purchase.tax_total }}"
+                  data-discount="{{ purchase.discount_total }}"
+                  data-other="{{ purchase.other_charges }}"
+                  data-total="{{ purchase.grand_total }}"
+                  data-status="{{ purchase.get_payment_status_display }}"
+                  data-paid="{{ purchase.amount_paid }}"
+                  data-balance="{{ purchase.balance }}"
+                  data-items="{{ purchase.items.all|length }}"
+                >
+                  <i class="bi bi-eye"></i>
+                </button>
+
+                <!-- Hidden table (items data) -->
+                <div id="row-items-{{ purchase.id }}" style="display:none;">
+                  <table>
+                    {% for item in purchase.items.all %}
+                      <tr data-product="{{ item.product.name }}"
+                          data-qty="{{ item.qty }}"
+                          data-cost="{{ item.cost_price }}"
+                          data-discount="{{ item.discount }}"
+                          data-line="{{ item.line_total }}">
+                      </tr>
                     {% endfor %}
-                </tbody>
-            </table>
+                  </table>
+                </div>
 
-        </div>
+                <a href="{% url 'purchase_edit' purchase.id %}" class="btn btn-sm btn-outline-primary">
+                  <i class="bi bi-pencil-square"></i>
+                </a>
+
+                <a href="{% url 'purchase_delete' purchase.id %}"
+                   class="btn btn-sm btn-outline-danger ms-1"
+                   onclick="return confirm('Delete this purchase?');">
+                  <i class="bi bi-trash"></i>
+                </a>
+
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="11" class="text-center text-muted py-4">
+                <i class="bi bi-info-circle me-2"></i>No purchases found.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+
+        </table>
+      </div>
     </div>
 
-</div>
+  </div>
+
+  <!-- VIEW MODAL -->
+  <div class="modal fade" id="purchaseViewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-receipt me-2"></i>Purchase Details</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+
+        <div class="modal-body">
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6"><strong>Purchase No:</strong> <span id="m-no"></span></div>
+            <div class="col-md-6"><strong>Date:</strong> <span id="m-date"></span></div>
+            <div class="col-md-12"><strong>Supplier:</strong> <span id="m-supplier"></span></div>
+          </div>
+
+          <hr>
+
+          <h5 class="mb-3 text-info"><i class="bi bi-box-seam me-2"></i>Items</h5>
+
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered item-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Qty</th>
+                  <th>Cost</th>
+                  <th>Discount</th>
+                  <th>Line Total</th>
+                </tr>
+              </thead>
+              <tbody id="items-body">
+              </tbody>
+            </table>
+          </div>
+
+          <hr>
+
+          <div class="row g-3">
+            <div class="col-md-6"><strong>Subtotal:</strong> ₹<span id="m-subtotal"></span></div>
+            <div class="col-md-6"><strong>Tax:</strong> ₹<span id="m-tax"></span></div>
+            <div class="col-md-6"><strong>Discount:</strong> ₹<span id="m-discount"></span></div>
+            <div class="col-md-6"><strong>Other Charges:</strong> ₹<span id="m-other"></span></div>
+
+            <div class="col-md-12"><strong>Total:</strong> ₹<span id="m-total"></span></div>
+            <div class="col-md-6"><strong>Paid:</strong> ₹<span id="m-paid"></span></div>
+            <div class="col-md-6"><strong>Balance:</strong> ₹<span id="m-balance"></span></div>
+
+            <div class="col-md-12"><strong>Status:</strong> <span id="m-status"></span></div>
+          </div>
+
+          <div class="col-md-12 text-center mt-4">
+            <a id="m-edit-link" class="btn btn-outline-primary px-4">Edit Purchase</a>
+          </div>
+
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+
+      const modalEl = document.getElementById('purchaseViewModal');
+      const itemsBody = document.getElementById("items-body");
+
+      modalEl.addEventListener('show.bs.modal', event => {
+        const btn = event.relatedTarget;
+        if (!btn) return;
+
+        const d = btn.dataset;
+        const set = (id, v) => document.getElementById(id).textContent = v || '—';
+
+        set('m-no', d.no);
+        set('m-date', d.date);
+        set('m-supplier', d.supplier);
+        set('m-subtotal', d.subtotal);
+        set('m-tax', d.tax);
+        set('m-discount', d.discount);
+        set('m-other', d.other);
+        set('m-total', d.total);
+        set('m-paid', d.paid);
+        set('m-balance', d.balance);
+        set('m-status', d.status);
+
+        document.getElementById('m-edit-link')
+          .href = '{% url "purchase_edit" 0 %}'.replace('/0/', '/' + d.id + '/');
+
+        /* ----- LOAD ITEMS INTO MODAL ----- */
+        itemsBody.innerHTML = "";
+        const table = document.querySelector("#row-items-" + d.id + " table");
+
+        if (table) {
+          table.querySelectorAll("tr").forEach(row => {
+            const prod = row.dataset.product;
+            const qty = row.dataset.qty;
+            const cost = row.dataset.cost;
+            const disc = row.dataset.discount;
+            const line = row.dataset.line;
+
+            itemsBody.innerHTML += `
+              <tr>
+                <td>${prod}</td>
+                <td>${qty}</td>
+                <td>₹${cost}</td>
+                <td>₹${disc}</td>
+                <td><strong>₹${line}</strong></td>
+              </tr>`;
+          });
+        }
+
+      });
+
+    });
+  </script>
 
 </body>
 </html>
+

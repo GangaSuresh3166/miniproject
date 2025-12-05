@@ -1,29 +1,228 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
-from django.contrib.auth.models import User
 from django.conf import settings
-import uuid
 
 
-class UserProfile(models.Model):
-    ROLE_CHOICES = [
-        ("staff", "Staff"),
-    ]
+# =====================================================
+# 1. CUSTOM USER
+# =====================================================
 
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+class User(AbstractUser):
     phone = models.CharField(max_length=20, blank=True, null=True)
-    company = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
-        return self.user.username
+        return self.username
 
 
+# =====================================================
+# 2. CUSTOMER
+# =====================================================
+
+class Customer(models.Model):
+    name = models.CharField(max_length=100)
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=15, blank=True, null=True)
+
+    def __str__(self):
+        return self.name
+
+
+# =====================================================
+# 3. SUPPLIER
+# =====================================================
+
+class Supplier(models.Model):
+    supplier_name = models.CharField(max_length=150)
+    company_name = models.CharField(max_length=200, blank=True, null=True)
+
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=20)
+    alt_phone = models.CharField(max_length=20, blank=True, null=True)
+
+    gst_number = models.CharField(max_length=50, blank=True, null=True)
+    pan_number = models.CharField(max_length=50, blank=True, null=True)
+
+    address = models.TextField(blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    country = models.CharField(max_length=100, default="India")
+    postal_code = models.CharField(max_length=15, blank=True, null=True)
+
+    bank_name = models.CharField(max_length=150, blank=True, null=True)
+    account_number = models.CharField(max_length=50, blank=True, null=True)
+    ifsc_code = models.CharField(max_length=20, blank=True, null=True)
+    branch = models.CharField(max_length=100, blank=True, null=True)
+
+    website = models.CharField(max_length=150, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["supplier_name"]
+
+    def __str__(self):
+        return self.supplier_name
+
+
+# =====================================================
+# 4. CATEGORY & SUBCATEGORY
+# =====================================================
+
+class Category(models.Model):
+    category_name = models.CharField(max_length=150, null=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.category_name
+
+
+class SubCategory(models.Model):
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="subcategories")
+    subcategory_name = models.CharField(max_length=150, null=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.subcategory_name
+
+
+# =====================================================
+# 5. PRODUCT (FULL MODEL)
+# =====================================================
+
+class Product(models.Model):
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+        ('out_of_stock', 'Out of Stock'),
+        ('discontinued', 'Discontinued'),
+    ]
+
+    product_id = models.CharField(max_length=50)
+    name = models.CharField(max_length=200)
+
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True)
+    subcategory = models.ForeignKey(SubCategory, on_delete=models.SET_NULL, null=True)
+
+    brand = models.CharField(max_length=100, blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    selling_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    discount = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    tax = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+
+    quantity = models.IntegerField()
+    reorder_level = models.IntegerField()
+
+    supplier_name = models.CharField(max_length=200, null=True)
+    supplier_contact = models.CharField(max_length=20, null=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', null=True, blank=True)
+    notes = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return self.name
+
+
+# =====================================================
+# 6. SALES & SALES ITEMS
+# =====================================================
+
+
+class Sales(models.Model):
+    PAYMENT_STATUS_CHOICES = (
+        ("PAID", "Paid"),
+        ("PENDING", "Pending"),
+        ("CREDIT", "Credit"),
+    )
+
+    invoice_no = models.CharField(max_length=20, unique=True)
+    customer_name = models.CharField(max_length=200, null=True)
+    date = models.DateField(blank=True, null=True)
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_tax = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    grand_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    payment_status = models.CharField(
+        max_length=10, choices=PAYMENT_STATUS_CHOICES, default="PENDING"
+    )
+
+    notes = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Invoice #{self.invoice_no} - {self.customer_name}"
+
+class SalesItem(models.Model):
+    sale = models.ForeignKey(Sales, related_name="items", on_delete=models.CASCADE,null=True)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE,null=True)
+    qty = models.PositiveIntegerField(default=1)
+    price = models.DecimalField(max_digits=10, decimal_places=2,null=True)
+    discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    tax = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+
+
+# =====================================================
+# 7. PURCHASE & PURCHASE ITEMS
+# =====================================================
+
+class Purchase(models.Model):
+    PAYMENT_TYPES = [
+        ("cash", "Cash"),
+        ("card", "Card"),
+        ("online", "Online Transfer"),
+        ("credit", "Credit"),
+    ]
+
+    PAYMENT_STATUS = [
+        ("paid", "Paid"),
+        ("partial", "Partial"),
+        ("unpaid", "Unpaid"),
+    ]
+
+    purchase_no = models.CharField(max_length=50, unique=True)
+    date = models.DateField(default=timezone.now)
+    payment_type = models.CharField(max_length=20, choices=PAYMENT_TYPES)
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE)
+
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    discount_total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    tax_total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    other_charges = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    grand_total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    amount_paid = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS)
+    notes = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Purchase #{self.purchase_no}"
+
+
+class PurchaseItem(models.Model):
+    purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+
+    qty = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    discount = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    tax = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+    line_total = models.DecimalField(max_digits=10, decimal_places=2, null=True)
+
+    def __str__(self):
+        return f"{self.product.name} x {self.qty}"
+
+
+# =====================================================
+# 9. OTP & SYSTEM SETTINGS
+# =====================================================
 
 class LoginOTP(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     code = models.CharField(max_length=6)
+
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     used = models.BooleanField(default=False)
@@ -31,161 +230,30 @@ class LoginOTP(models.Model):
 
     def is_valid(self):
         return (
-            not self.used and 
-            timezone.now() <= self.expires_at and 
-            self.attempts < 5
+            not self.used
+            and timezone.now() <= self.expires_at
+            and self.attempts < 5
         )
 
     def __str__(self):
         return f"{self.user} — {self.code}"
 
 
-
-# -----------------------------
-# Category model
-# -----------------------------
-class Category(models.Model):
-    name = models.CharField(max_length=100)
-    description = models.TextField(blank=True)
-
-    def __str__(self):
-        return self.name
-
-# -----------------------------
-# Supplier model
-# -----------------------------
-class Supplier(models.Model):
-    name = models.CharField(max_length=200)
-    email = models.EmailField(blank=True, null=True)
-    phone = models.CharField(max_length=20, blank=True, null=True)
-    address = models.TextField(blank=True)
-
-    def __str__(self):
-        return self.name
-
-
-# -----------------------------
-# Product model
-# -----------------------------
-class Product(models.Model):
-    name = models.CharField(max_length=200)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE)
-    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-    stock = models.IntegerField(default=0)  # ✅ Add this
-    description = models.TextField(blank=True)
-
-    def __str__(self):
-        return self.name
-
-
-
-# -----------------------------
-# Transaction model
-# -----------------------------
-class Transaction(models.Model):
-    TRANSACTION_TYPES = (
-        ('sale', 'Sale'),
-        ('purchase', 'Purchase'),
-    )
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    quantity = models.IntegerField()
-    transaction_type = models.CharField(max_length=10, choices=TRANSACTION_TYPES)
-    date = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.transaction_type.title()} - {self.product.name}"
-
-
-# -----------------------------
-# Report model
-# -----------------------------
-class Report(models.Model):
-    name = models.CharField(max_length=200)
-    created_at = models.DateTimeField(auto_now_add=True)
-    description = models.TextField(blank=True, null=True)
-
-    def __str__(self):
-        return self.name   # ✅ fixed — use existing field
-
-
-# ----------------------------21
-
-
-class Purchase(models.Model):
-    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='purchases')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='purchases')
-    quantity = models.PositiveIntegerField()
-    purchase_price = models.DecimalField(max_digits=10, decimal_places=2)
-    total_cost = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    date = models.DateField(default=timezone.now)
-
-    def save(self, *args, **kwargs):
-        self.total_cost = self.quantity * self.purchase_price
-        super().save(*args, **kwargs)
-        # Update stock
-        self.product.quantity += self.quantity
-        self.product.save()
-
-    def __str__(self):
-        return f"Purchase of {self.product.name} ({self.quantity})"
-
-
-class Sale(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='sales')
-    quantity = models.PositiveIntegerField()
-    sale_price = models.DecimalField(max_digits=10, decimal_places=2)
-    total_amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-    date = models.DateField(default=timezone.now)
-    customer_name = models.CharField(max_length=150, blank=True)
-
-    def save(self, *args, **kwargs):
-        self.total_amount = self.quantity * self.sale_price
-        super().save(*args, **kwargs)
-        # Update stock
-        self.product.quantity -= self.quantity
-        self.product.save()
-
-    def __str__(self):
-        return f"Sale of {self.product.name} ({self.quantity})"
-
-
-# -------------------------------------------------------
-# 7️⃣ Stock Report Model
-# -------------------------------------------------------
-class StockReport(models.Model):
-    generated_on = models.DateTimeField(auto_now_add=True)
-    total_products = models.PositiveIntegerField()
-    total_stock_value = models.DecimalField(max_digits=12, decimal_places=2)
-    generated_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,  # ✅ instead of User
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True
-    )
-
-    def __str__(self):
-        return f"Report - {self.generated_on.strftime('%Y-%m-%d %H:%M')}"
-
-
-
-# -------------------------------------------------------
-# 8️⃣ System Settings (for admin configuration)
-# -------------------------------------------------------
 class SystemSetting(models.Model):
-    site_name = models.CharField(max_length=150, default="Stock Inventory System")
-    logo = models.ImageField(upload_to='settings/', blank=True, null=True)
+    site_name = models.CharField(max_length=150, default="Stock App System")
+    logo = models.ImageField(upload_to="settings/", blank=True, null=True)
+
     contact_email = models.EmailField(blank=True, null=True)
     contact_phone = models.CharField(max_length=20, blank=True, null=True)
+
     last_updated = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return "System Settings"
 
 
-
 class SystemConfig(models.Model):
-    system_name = models.CharField(max_length=200, default="Inventory Management System")
+    system_name = models.CharField(max_length=200, default="App Management System")
     currency = models.CharField(max_length=20, default="INR (₹)")
     default_tax = models.FloatField(default=0)
 
@@ -204,24 +272,22 @@ class SystemLog(models.Model):
 
 
 class AppearanceSettings(models.Model):
-    theme = models.CharField(max_length=20, default="light")  # light / dark / blue
+    theme = models.CharField(max_length=20, default="light")
 
     def __str__(self):
         return self.theme
 
 
-
-
 class PasswordResetOTP(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_otps')
-    otp = models.CharField(max_length=6)                 # numeric string like '123456'
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    otp = models.CharField(max_length=6)
+
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     used = models.BooleanField(default=False)
-    token = models.UUIDField(default=uuid.uuid4, editable=False)  # optional extra token
 
     def is_expired(self):
         return timezone.now() > self.expires_at
 
     def __str__(self):
-        return f"OTP for {self.user.email} (used={self.used})"
+        return f"{self.user.email} - {self.otp}"

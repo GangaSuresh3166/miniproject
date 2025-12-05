@@ -1,132 +1,117 @@
-from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib import messages
-from django.contrib.auth import authenticate, login, logout, get_user_model, update_session_auth_hash
-from django.contrib.auth.decorators import login_required
+from datetime import timedelta
+import random ,csv ,json ,os
+from io import BytesIO
+from django.views import View
+from django.db.models import Sum
+from .forms import SubCategoryFormSet
+from .forms import SalesItemFormset
+from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse, path
+from django.template.response import TemplateResponse
+from django.contrib import messages, admin
+from django.contrib.auth import (
+    authenticate, login, logout, update_session_auth_hash, get_user_model
+)
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.forms import PasswordChangeForm
 from django.utils import timezone
-from django.db.models import Count
-from django.http import HttpResponse
-from django.conf import settings
-from django.urls import reverse
-from django.contrib.auth.models import User
-from .models import (
-    Supplier, Product, Category, Transaction, UserProfile,
-    LoginOTP, SystemConfig, SystemLog, AppearanceSettings,
-    Purchase, Sale, PasswordResetOTP
-)
-from .forms import (
-    RequestOTPForm, VerifyOTPForm, ResetPasswordForm,
-    UserForm, ProductForm
-)
-from .utils import create_otp_for_user, send_otp_email
-import random, csv, os, json
-from datetime import timedelta
+from django.http import JsonResponse, HttpResponse
+from django.db import transaction
+from django.contrib.admin.models import LogEntry
+try:
+    import openpyxl
+    from openpyxl.styles import Font
+except Exception:
+    openpyxl = None
 
+# Local imports
+from .models import (
+    Supplier, Product, Category, SubCategory,
+    Purchase, PurchaseItem,Sales, SalesItem,Customer,LoginOTP, PasswordResetOTP
+)
+from django.forms import inlineformset_factory
+from .forms import (
+    RequestOTPForm, VerifyOTPForm, ResetPasswordForm, SubCategoryForm,
+    UserForm, ProductForm, SupplierForm, CategoryForm,PurchaseForm, PurchaseItemFormSet,
+    SalesForm, SalesItemForm
+)
+from .utils import create_otp_for_user, send_otp_email, generate_transaction_no
 
 User = get_user_model()
 
+
 # ---------------------------
-# LOGIN / LOGOUT / REGISTER
+# Helper utilities
+# ---------------------------
+
+def admin_only(user):
+    return user.is_superuser
+
+
+def calc_purchase_totals_from_formset(formset):
+    """Return subtotal computed by formset if set by BasePurchaseItemFormSet."""
+    return getattr(formset, "subtotal", 0)
+
+
+def compute_grand_and_balance(subtotal, discount_total, tax_total, other_charges, amount_paid):
+    subtotal = subtotal or 0
+    discount_total = discount_total or 0
+    tax_total = tax_total or 0
+    other_charges = other_charges or 0
+    amount_paid = amount_paid or 0
+
+    grand_total = subtotal - discount_total + tax_total + other_charges
+    balance = max(grand_total - amount_paid, 0)
+    return grand_total, balance
+
+
+# ---------------------------
+# AUTH: login / logout
 # ---------------------------
 
 def index(request):
     return render(request, "index.html")
 
+
 def login_view(request):
     if request.method == "POST":
-        fullname = request.POST.get("fullname")
-        password = request.POST.get("password")
-
-        # ✅ authenticate using fullname as username
-        user = authenticate(request, username=fullname, password=password)
-
-        if user is None:
-            messages.error(request, "Invalid name or password")
+        username = (request.POST.get("username") or "").strip()
+        password = (request.POST.get("password") or "").strip()
+        user = authenticate(request, username=username, password=password)
+        if user:
+            login(request, user)
+            if user.is_superuser:
+                return redirect("admin_home")
+            if user.is_staff:
+                return redirect("user_home")
+            messages.error(request, "Unauthorized access.")
             return redirect("login")
-
-        login(request, user)
-
-        # ✅ ADMIN → admin home
-        if user.is_superuser or user.is_staff:
-            return redirect('/admin_home/')
-
-        # ✅ USER → user home
-        return redirect('/user_home/')
-
+        messages.error(request, "Invalid username or password.")
+        return redirect("login")
     return render(request, "login.html")
+
 
 def logout_view(request):
     logout(request)
     return redirect("login")
 
 
-# app/views.py
-
-def registration(request):
-    if request.method == "POST":
-
-        fullname = request.POST.get("fullname")
-        email = request.POST.get("email")
-        phone = request.POST.get("phone")
-        role = request.POST.get("role")
-        company = request.POST.get("company")
-        password = request.POST.get("password")
-        confirm = request.POST.get("confirm")
-
-        # 1. Password match check
-        if password != confirm:
-            messages.error(request, "Passwords do not match.")
-            return redirect("registration")
-
-        # 2. Prevent duplicate accounts
-        if User.objects.filter(username=fullname).exists():
-            messages.error(request, "An account with this email already exists.")
-            return redirect("registration")
-
-        # 3. Block admin creation
-        if role not in ["staff"]:
-            messages.error(request, "Invalid role selected.")
-            return redirect("registration")
-
-        # 4. Create User
-        user = User.objects.create_user(
-    username=fullname,   # ✅ login with fullname
-    email=email,
-    password=password,
-    first_name=fullname
-)
-
-
-
-        # Make sure it's never admin
-        user.is_staff = False
-        user.is_superuser = False
-        user.save()
-
-        # 5. Fill UserProfile
-        profile = user.userprofile
-        profile.role = role
-        profile.phone = phone
-        profile.company = company
-        profile.save()
-
-        messages.success(request, "Account created successfully! Please log in.")
-        return redirect("login")
-
-    return render(request, "registration.html")
-
-
-
 # ---------------------------
-# OTP AUTH
+# OTP AUTH (login) helpers
 # ---------------------------
+
+def _create_and_store_login_otp(user, minutes=10):
+    code = f"{random.randint(0, 999999):06d}"
+    expires_at = timezone.now() + timedelta(minutes=minutes)
+    otp = LoginOTP.objects.create(user=user, code=code, expires_at=expires_at)
+    return otp
+
 
 def otp_request(request):
+    """Request login OTP via username or email."""
     if request.method == "POST":
-        identifier = request.POST.get("identifier")
+        identifier = (request.POST.get("identifier") or "").strip()
         user = None
-
-        # Identify user
         if "@" in identifier:
             user = User.objects.filter(email__iexact=identifier).first()
         else:
@@ -136,14 +121,9 @@ def otp_request(request):
             messages.error(request, "User not found")
             return render(request, "otp_request.html")
 
-        code = f"{random.randint(0, 999999):06d}"
-        LoginOTP.objects.create(
-            user=user,
-            code=code,
-            expires_at=timezone.now() + timedelta(minutes=10)
-        )
-
+        _create_and_store_login_otp(user)
         request.session["otp_uid"] = user.id
+        messages.success(request, "OTP sent (development: check database).")
         return redirect("otp_verify")
 
     return render(request, "otp_request.html")
@@ -153,109 +133,121 @@ def otp_verify(request):
     uid = request.session.get("otp_uid")
     if not uid:
         return redirect("otp_request")
-
-    user = User.objects.get(id=uid)
+    user = get_object_or_404(User, id=uid)
 
     if request.method == "POST":
-        code = request.POST.get("code")
-
-        otp = LoginOTP.objects.filter(user=user, used=False).latest("created_at")
-
-        if not otp.is_valid():
-            messages.error(request, "OTP expired or invalid")
+        code = (request.POST.get("code") or "").strip()
+        otp = LoginOTP.objects.filter(user=user, used=False).order_by("-created_at").first()
+        if not otp or not otp.is_valid() or otp.code != code:
+            messages.error(request, "Invalid or expired OTP.")
             return redirect("otp_request")
-
-        if otp.code == code:
-            otp.used = True
-            otp.save()
-            login(request, user)
-            return redirect("admin_home")
-
-        messages.error(request, "Invalid code")
-
-    return render(request, "otp_verify.html")
+        otp.used = True
+        otp.save()
+        login(request, user)
+        return redirect("admin_home")
+    return render(request, "otp_verify.html", {"user": user})
 
 # ---------------------------
-# ADMIN HOME / DASHBOARD
+# Dashboard
 # ---------------------------
 
 @login_required
+@login_required
 def admin_home(request):
-    total_users = User.objects.count()
+    from django.db.models import Sum
+    from .models import Sales, Purchase
+
+    # ======== YOUR OLD METRICS ========
+    total_users = User.objects.filter(is_superuser=False).count()
     total_suppliers = Supplier.objects.count()
     total_products = Product.objects.count()
-    total_transactions = Transaction.objects.count()
 
-    total_sales = Sale.objects.count()
-    total_purchases = Purchase.objects.count()
+    # ======== NEW ANALYTICS DATA ========
+    # Group Sales by date
+    sales = (
+        Sales.objects.values("date")
+        .annotate(total=Sum("grand_total"))
+        .order_by("date")
+    )
 
-    context = {
+    # Group Purchases by date
+    purchases = (
+        Purchase.objects.values("date")
+        .annotate(total=Sum("grand_total"))
+        .order_by("date")
+    )
+
+    # Convert to Chart.js format
+    sales_labels = [s["date"].strftime("%Y-%m-%d") for s in sales]
+    sales_values = [float(s["total"]) for s in sales]
+
+    purchase_values = [float(p["total"]) for p in purchases]
+
+    return render(request, "admin_home.html", {
         "total_users": total_users,
         "total_suppliers": total_suppliers,
         "total_products": total_products,
-        "total_transactions": total_transactions,
-        "total_sales": total_sales,
-        "total_purchases": total_purchases,
-    }
 
-    return render(request, "admin_home.html", context)
+        # chart data
+        "sales_labels": sales_labels,
+        "sales_values": sales_values,
+        "purchase_values": purchase_values,
+    })
+
 
 # ---------------------------
-# USER MANAGEMENT
+# User Management (admin)
 # ---------------------------
 
+@user_passes_test(admin_only)
 @login_required
 def users_list(request):
-    users = User.objects.all().order_by("-date_joined")
+    users = User.objects.filter(is_staff=True, is_superuser=False).order_by("username")
     return render(request, "users_list.html", {"users": users})
 
 
+@user_passes_test(admin_only)
 @login_required
 def add_user(request):
+    form = UserForm(request.POST or None)
     if request.method == "POST":
-        form = UserForm(request.POST)
         if form.is_valid():
             user = form.save(commit=False)
-            if form.cleaned_data["password"]:
-                user.set_password(form.cleaned_data["password"])
+            user.is_staff = True
             user.save()
-            messages.success(request, "User created successfully!")
+            messages.success(request, "Staff added successfully.")
             return redirect("users_list")
-    else:
-        form = UserForm()
-
-    return render(request, "add_edit_user.html", {"form": form})
+        messages.error(request, "Please fix the errors below.")
+    return render(request, "user_add_edit.html", {"form": form})
 
 
+@user_passes_test(admin_only)
 @login_required
 def edit_user(request, user_id):
-    user = get_object_or_404(User, id=user_id)
-
+    user_obj = get_object_or_404(User, id=user_id)
+    form = UserForm(request.POST or None, instance=user_obj)
     if request.method == "POST":
-        form = UserForm(request.POST, instance=user)
         if form.is_valid():
-            user = form.save(commit=False)
-            if form.cleaned_data["password"]:
-                user.set_password(form.cleaned_data["password"])
-            user.save()
-            messages.success(request, "User updated successfully!")
+            form.save()
+            messages.success(request, "Staff updated successfully.")
             return redirect("users_list")
-
-    else:
-        form = UserForm(instance=user)
-
-    return render(request, "add_edit_user.html", {"form": form})
+        messages.error(request, "Please fix the errors below.")
+    return render(request, "user_add_edit.html", {"form": form, "user": user_obj})
 
 
+@user_passes_test(admin_only)
 @login_required
 def delete_user(request, user_id):
-    user = get_object_or_404(User, id=user_id)
-    user.delete()
-    messages.success(request, "User deleted successfully!")
-    return redirect("users_list")
+    user_obj = get_object_or_404(User, id=user_id)
+    if request.method == "POST":
+        user_obj.delete()
+        messages.success(request, "Staff deleted.")
+        return redirect("users_list")
+    return render(request, "confirm_delete.html", {"user": user_obj})
+
 
 # ---------------------------
-# SUPPLIER MANAGEMENT
+# Supplier CRUD
 # ---------------------------
 
 @login_required
@@ -265,547 +257,844 @@ def supplier_list(request):
 
 
 @login_required
-def add_supplier(request):
+def supplier_add(request):
+    form = SupplierForm(request.POST or None)
     if request.method == "POST":
-        Supplier.objects.create(
-            name=request.POST["name"],
-            email=request.POST.get("email"),
-            phone=request.POST.get("phone"),
-            address=request.POST.get("address"),
-            is_active=(request.POST.get("is_active") == "True")
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Supplier added successfully!")
+            return redirect("supplier_list")
+        messages.error(request, "Please correct the errors below.")
+    return render(request, "supplier_add_edit.html", {"form": form, "title": "Add Supplier"})
+
+
+@login_required
+def supplier_edit(request, supplier_id):
+    supplier = get_object_or_404(Supplier, id=supplier_id)
+    form = SupplierForm(request.POST or None, instance=supplier)
+    if request.method == "POST":
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Supplier updated successfully!")
+            return redirect("supplier_list")
+        messages.error(request, "Please correct the errors below.")
+    return render(request, "supplier_add_edit.html", {"form": form, "title": "Edit Supplier", "supplier": supplier})
+
+
+@login_required
+def supplier_delete(request, supplier_id):
+    supplier = get_object_or_404(Supplier, id=supplier_id)
+    if request.method == "POST":
+        supplier.delete()
+        messages.success(request, "Supplier deleted successfully!")
+        return redirect("supplier_list")
+    return render(request, "supplier_confirm_delete.html", {"supplier": supplier})
+
+
+# ---------------------------
+# Category / SubCategory
+# ---------------------------
+
+login_required
+def category_list(request):
+    categories = Category.objects.all().order_by("category_name")
+    return render(request, "category_list.html", {
+        "categories": categories,
+        "title": "Category List",
+    })
+
+@login_required
+def category_add(request):
+    if request.method == "POST":
+        form = CategoryForm(request.POST)
+        formset = SubCategoryFormSet(
+            request.POST,
+            queryset=SubCategory.objects.none()
         )
-        return redirect("supplier_list")
 
-    return render(request, "add_edit_supplier.html")
+        if form.is_valid() and formset.is_valid():
+            category = form.save()
 
+            # Save all subcategories
+            subcats = formset.save(commit=False)
+            for sub in subcats:
+                sub.category = category
+                sub.save()
+
+            messages.success(request, "Category & Subcategories added successfully.")
+            return redirect("category_list")
+
+        else:
+            messages.error(request, "Please fix the errors below.")
+
+    else:
+        form = CategoryForm()
+        formset = SubCategoryFormSet(queryset=SubCategory.objects.none())
+
+    return render(request, "category_add_edit.html", {
+        "form": form,
+        "formset": formset,
+        "title": "Add Category",
+    })
 
 @login_required
-def edit_supplier(request, supplier_id):
-    supplier = get_object_or_404(Supplier, id=supplier_id)
+def category_edit(request, pk):
+    category = get_object_or_404(Category, pk=pk)
 
     if request.method == "POST":
-        supplier.name = request.POST["name"]
-        supplier.email = request.POST.get("email")
-        supplier.phone = request.POST.get("phone")
-        supplier.address = request.POST.get("address")
-        supplier.is_active = (request.POST.get("is_active") == "True")
-        supplier.save()
-        return redirect("supplier_list")
+        form = CategoryForm(request.POST, instance=category)
+        formset = SubCategoryFormSet(
+            request.POST,
+            queryset=SubCategory.objects.filter(category=category)
+        )
 
-    return render(request, "add_edit_supplier.html", {"supplier": supplier})
+        if form.is_valid() and formset.is_valid():
+            form.save()
+
+            # Save existing + new subcategories
+            subcats = formset.save(commit=False)
+
+            for sub in subcats:
+                sub.category = category
+                sub.save()
+
+            # Delete removed subcategories
+            for deleted in formset.deleted_objects:
+                deleted.delete()
+
+            messages.success(request, "Category & Subcategories updated successfully.")
+            return redirect("category_list")
+        else:
+            messages.error(request, "Please correct the errors below.")
+
+    else:
+        form = CategoryForm(instance=category)
+        formset = SubCategoryFormSet(
+            queryset=SubCategory.objects.filter(category=category)
+        )
+
+    return render(request, "category_add_edit.html", {
+        "form": form,
+        "formset": formset,
+        "title": "Edit Category",
+    })
+
+def category_delete(request, pk):
+    category = get_object_or_404(Category, pk=pk)
+
+    if request.method == "POST":
+        category.delete()
+        return redirect("category_list")
+
+    return render(request, "category_delete_confirm.html", {"category": category})
 
 
 @login_required
-def delete_supplier(request, supplier_id):
-    supplier = get_object_or_404(Supplier, id=supplier_id)
-    supplier.delete()
-    return redirect("supplier_list")
+def subcategory_list(request):
+    subcats = SubCategory.objects.select_related("category").all()
+    return render(request, "subcategory_list.html", {"data": subcats})
+
+
+@login_required
+def subcategory_add(request):
+    form = SubCategoryForm(request.POST or None)
+    if request.method == "POST":
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Sub-category added.")
+            return redirect("subcategory_list")
+        messages.error(request, "Please fix the errors.")
+    return render(request, "subcategory_form.html", {"form": form, "title": "Add Sub-Category"})
+
+
+@login_required
+def subcategory_edit(request, pk):
+    subcat = get_object_or_404(SubCategory, pk=pk)
+    form = SubCategoryForm(request.POST or None, instance=subcat)
+    if request.method == "POST":
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Sub-category updated.")
+            return redirect("subcategory_list")
+        messages.error(request, "Please fix the errors.")
+    return render(request, "subcategory_form.html", {"form": form, "title": "Edit Sub-Category", "subcat": subcat})
+
+
+@login_required
+def subcategory_delete(request, pk):
+    subcat = get_object_or_404(SubCategory, pk=pk)
+    if request.method == "POST":
+        subcat.delete()
+        messages.success(request, "Sub-category deleted.")
+        return redirect("subcategory_list")
+    return render(request, "subcategory_delete_confirm.html", {"subcat": subcat})
+
 
 # ---------------------------
-# PRODUCT MANAGEMENT
+# Product CRUD & Ajax
 # ---------------------------
-
-
 
 @login_required
 def product_list(request):
-    products = Product.objects.select_related("category", "supplier").all()
+    products = Product.objects.select_related("category", "subcategory").all()
     return render(request, "product_list.html", {"products": products})
 
 
 @login_required
-def add_product(request):
+def product_add(request):
     if request.method == "POST":
         form = ProductForm(request.POST)
+
+        # Auto-submit when category is changed
+        if request.POST.get("category_changed") == "1":
+            return render(request, "product_add_edit.html", {"form": form})
+
+        # Normal save
         if form.is_valid():
             form.save()
-            messages.success(request, "Product added successfully!")
             return redirect("product_list")
+
     else:
         form = ProductForm()
 
-    return render(request, "add_edit_product.html", {"form": form, "title": "Add New Product"})
+    return render(request, "product_add_edit.html", {"form": form})
 
 
-@login_required
-def edit_product(request, pk):
-    product = get_object_or_404(Product, id=pk)
+def get_subcategories(request):
+    category_id = request.GET.get("category_id")
+    subcats = SubCategory.objects.filter(category_id=category_id)
 
-    if request.method == "POST":
-        form = ProductForm(request.POST, instance=product)
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Product updated successfully!")
-            return redirect("product_list")
-    else:
-        form = ProductForm(instance=product)
+    data = [{"id": s.id, "name": s.name} for s in subcats]
+    return JsonResponse({"SubCategories": data})
 
-    return render(
-        request,
-        "add_edit_product.html",
-        {"form": form, "title": f"Edit Product — {product.name}"}
-    )
 
 
 @login_required
-def delete_product(request, pk):
-    product = get_object_or_404(Product, id=pk)
-    product.delete()
-    messages.warning(request, "Product deleted!")
-    return redirect("product_list")
+def product_edit(request, pk):
+    product = get_object_or_404(Product, pk=pk)
+    form = ProductForm(request.POST or None, instance=product)
+    subcategories = SubCategory.objects.all()
 
-# ---------------------------
-# CATEGORY MANAGEMENT
-# ---------------------------
-
-def category_list(request):
-    categories = Category.objects.all()
-    return render(request, "category_list.html", {"categories": categories})
-
-
-def add_category(request):
-    if request.method == "POST":
-        # save form
-        pass
-    return render(request, "category_form.html")
-
-
-def edit_category(request, pk):
-    category = get_object_or_404(Category, pk=pk)
-    if request.method == "POST":
-        # save edited form
-        pass
-    return render(request, "category_form.html", {"category": category})
-
-
-def delete_category(request, pk):
-    category = get_object_or_404(Category, pk=pk)
-    category.delete()
-    return redirect("category_list")
-
-# ---------------------------
-# PURCHASE MANAGEMENT
-# ---------------------------
-
-@login_required
-def purchase_list(request):
-    q = request.GET.get("q", "")
-    purchases = Purchase.objects.filter(supplier__name__icontains=q)
-    return render(request, "purchase_list.html", {"purchases": purchases})
-
-
-@login_required
-def add_purchase(request):
-    suppliers = Supplier.objects.all()
-
-    if request.method == "POST":
-        Purchase.objects.create(
-            invoice_no=request.POST.get("invoice_no"),
-            supplier_id=request.POST.get("supplier"),
-            date=request.POST.get("date"),
-            total_amount=request.POST.get("total_amount"),
-            status=request.POST.get("status")
-        )
-
-        messages.success(request, "Purchase added successfully.")
-        return redirect("purchase_list")
-
-    return render(request, "add_edit_purchase.html", {"suppliers": suppliers})
-
-
-@login_required
-def edit_purchase(request, purchase_id):
-    purchase = get_object_or_404(Purchase, id=purchase_id)
-    suppliers = Supplier.objects.all()
-
-    if request.method == "POST":
-        purchase.invoice_no = request.POST.get("invoice_no")
-        purchase.supplier_id = request.POST.get("supplier")
-        purchase.date = request.POST.get("date")
-        purchase.total_amount = request.POST.get("total_amount")
-        purchase.status = request.POST.get("status")
-        purchase.save()
-
-        messages.success(request, "Purchase updated successfully.")
-        return redirect("purchase_list")
-
-    return render(request, "add_edit_purchase.html", {
-        "purchase": purchase,
-        "suppliers": suppliers
+    return render(request, "product_add_edit.html", {
+        "form": form,
+        "subcategories": subcategories,
     })
 
 
 @login_required
-def delete_purchase(request, purchase_id):
-    purchase = get_object_or_404(Purchase, id=purchase_id)
-    purchase.delete()
-    messages.success(request, "Purchase deleted successfully.")
-    return redirect("purchase_list")
+def product_delete(request, pk):
+    product = get_object_or_404(Product, pk=pk)
+    if request.method == "POST":
+        product.delete()
+        messages.success(request, "Product deleted.")
+        return redirect("product_list")
+    return render(request, "product_confirm_delete.html", {"product": product})
+
 
 # ---------------------------
-# SALES MANAGEMENT
+# Purchases (list, add, edit, delete)
 # ---------------------------
+def purchase_list(request):
+    search = request.GET.get("search", "")
+
+    purchases = Purchase.objects.all().order_by("-id")
+
+    if search:
+        purchases = purchases.filter(invoice_number__icontains=search)
+
+    context = {
+        "title": "Purchase List",
+        "purchases": purchases,
+        "search": search,
+    }
+    return render(request, "purchase_list.html", context)
+
+@transaction.atomic
+@login_required
+
+def supplier_detail_json(request, pk):
+    supplier = get_object_or_404(Supplier, pk=pk)
+    data = {
+        "id": supplier.id,
+        "supplier_name": supplier.supplier_name,
+        "company_name": supplier.company_name,
+        "email": supplier.email,
+        "phone": supplier.phone,
+        "alt_phone": supplier.alt_phone,
+        "gst_number": supplier.gst_number,
+        "pan_number": supplier.pan_number,
+        "address": supplier.address,
+        "city": supplier.city,
+        "state": supplier.state,
+        "country": supplier.country,
+        "postal_code": supplier.postal_code
+    }
+    return JsonResponse(data)
+
+
+def product_detail_json(request, pk):
+    product = get_object_or_404(Product, pk=pk)
+    data = {
+        "id": product.id,
+        "product_id": product.product_id,
+        "name": product.name,
+        "cost_price": str(product.cost_price or 0),
+        "selling_price": str(product.selling_price or 0),
+        "discount": str(product.discount or 0),
+        "tax": str(product.tax or 0),
+    }
+    return JsonResponse(data)
+
+
+def purchase_add(request):
+
+    if request.method == 'POST':
+        form = PurchaseForm(request.POST)
+
+        if form.is_valid():
+            purchase = form.save()                     # Save purchase
+            create_purchase_transaction(purchase)      # Auto-generate transaction
+            return redirect('purchase_list')
+
+    else:
+        form = PurchaseForm()
+
+    products = Product.objects.filter(status='active').order_by('name')
+    suppliers = Supplier.objects.all().order_by('supplier_name')
+
+    return render(request, 'purchase_add_edit.html', {
+        'form': form,
+        'products': products,
+        'suppliers': suppliers,
+    })
+
+
+@transaction.atomic
+@login_required
+def purchase_edit(request, pk):
+    purchase = get_object_or_404(Purchase, pk=pk)
+    if request.method == "POST":
+        form = PurchaseForm(request.POST, instance=purchase)
+        formset = PurchaseItemFormSet(request.POST, instance=purchase)
+        if form.is_valid() and formset.is_valid():
+            purchase_obj = form.save(commit=False)
+
+            subtotal = calc_purchase_totals_from_formset(formset)
+            purchase_obj.subtotal = subtotal
+
+            grand_total, balance = compute_grand_and_balance(
+                subtotal,
+                purchase_obj.discount_total,
+                purchase_obj.tax_total,
+                purchase_obj.other_charges,
+                purchase_obj.amount_paid
+            )
+            purchase_obj.grand_total = grand_total
+            purchase_obj.balance = balance
+
+            purchase_obj.save()
+            formset.save()
+            messages.success(request, "Purchase updated successfully.")
+            return redirect("purchase_list")
+
+        messages.error(request, "Please fix the errors below.")
+    else:
+        form = PurchaseForm(instance=purchase)
+        formset = PurchaseItemFormSet(instance=purchase)
+
+    return render(request, "purchase_add_edit.html", {"form": form, "formset": formset, "title": "Edit Purchase"})
+
+
+@transaction.atomic
+@login_required
+def purchase_delete(request, pk):
+    purchase = get_object_or_404(Purchase, pk=pk)
+    if request.method == "POST":
+        purchase.delete()
+        messages.success(request, "Purchase deleted.")
+        return redirect("purchase_list")
+    return render(request, "purchase_confirm_delete.html", {"purchase": purchase})
+
+#----------------------------
+# sales
+#----------------------------
+
+from django.shortcuts import render, redirect, get_object_or_404
+from django.db import transaction
+from django.contrib.auth.decorators import login_required
+from .models import Sales, SalesItem, Product
+from .forms import SalesForm, SalesItemFormset
+from django.http import HttpResponse
+
+def generate_invoice_no():
+    last_sale = Sales.objects.order_by("id").last()
+    if not last_sale:
+        return "INV-0001"
+    try:
+        last_no = int(last_sale.invoice_no.split("-")[1])
+    except Exception:
+        last_no = last_sale.id
+    return f"INV-{last_no + 1:04d}"
 
 @login_required
 def sales_list(request):
-    q = request.GET.get("q", "")
-    sales = Sale.objects.filter(customer_name__icontains=q)
+    sales = Sales.objects.all().order_by("-id")
     return render(request, "sales_list.html", {"sales": sales})
 
 
 @login_required
-def add_sales(request):
+@transaction.atomic
+def sales_add(request):
     if request.method == "POST":
-        Sale.objects.create(
-            invoice_no=request.POST.get("invoice_no"),
-            customer_name=request.POST.get("customer_name"),
-            date=request.POST.get("date"),
-            total_amount=request.POST.get("total_amount"),
-            status=request.POST.get("status")
+
+        customer_name = request.POST.get("customer_name")
+        date = request.POST.get("date")
+
+        subtotal = float(request.POST.get("subtotal") or 0)
+        totaltax = float(request.POST.get("totaltax") or 0)
+        grandtotal = float(request.POST.get("grandtotal") or 0)
+
+        # create sale
+        sale = Sales.objects.create(
+            invoice_no = generate_invoice_no(),
+            customer_name = customer_name,
+            date = date,
+            subtotal = subtotal,
+            total_tax = totaltax,
+            grand_total = grandtotal,
         )
-        messages.success(request, "Sale added successfully.")
+
+        # get item lists
+        products = request.POST.getlist("product[]")
+        qtys = request.POST.getlist("qty[]")
+        prices = request.POST.getlist("price[]")
+        discounts = request.POST.getlist("discount[]")
+        taxes = request.POST.getlist("tax[]")
+        totals = request.POST.getlist("total[]")
+
+        # loop through rows
+        for p, q, pr, d, t, tot in zip(products, qtys, prices, discounts, taxes, totals):
+            if p == "":
+                continue  # skip empty rows
+
+            product = Product.objects.get(id=p)
+
+            SalesItem.objects.create(
+                sale=sale,
+                product=product,
+                qty=int(q or 0),
+                price=float(pr or 0),
+                discount=float(d or 0),
+                tax=float(t or 0),
+                total=float(tot or 0),
+            )
+
+            # update stock
+            product.quantity -= int(q)
+            product.save()
+
+        # 🔥 AUTO CREATE SALE ACCOUNTING TRANSACTION
+        create_sales_transaction(sale)
+
         return redirect("sales_list")
 
-    return render(request, "add_edit_sales.html")
+    # GET request
+    return render(request, "sales_add_edit.html", {
+        "products": Product.objects.all(),
+        "today": timezone.now().date(),
+    })
 
 
-@login_required
-def edit_sales(request, sales_id):
-    sale = get_object_or_404(Sale, id=sales_id)
+def sales_edit(request, pk):
+    sale = Sales.objects.get(id=pk)
+    items = sale.items.all()
 
     if request.method == "POST":
-        sale.invoice_no = request.POST.get("invoice_no")
-        sale.customer_name = request.POST.get("customer_name")
-        sale.date = request.POST.get("date")
-        sale.total_amount = request.POST.get("total_amount")
-        sale.status = request.POST.get("status")
+        # Same saving structure as sales_add
+        customer_name = request.POST.get("customer_name")
+        date = request.POST.get("date")
+
+        subtotal = request.POST.get("subtotal") or 0
+        totaltax = request.POST.get("totaltax") or 0
+        grandtotal = request.POST.get("grandtotal") or 0
+
+        # Update sale
+        sale.customer_name = customer_name
+        sale.date = date
+        sale.subtotal = subtotal
+        sale.total_tax = totaltax
+        sale.grand_total = grandtotal
         sale.save()
 
-        messages.success(request, "Sale updated successfully.")
+        # Delete old items (clean update)
+        sale.items.all().delete()
+
+        # Recreate item rows
+        products = request.POST.getlist("product[]")
+        qtys = request.POST.getlist("qty[]")
+        prices = request.POST.getlist("price[]")
+        discounts = request.POST.getlist("discount[]")
+        taxes = request.POST.getlist("tax[]")
+        totals = request.POST.getlist("total[]")
+
+        for p, q, pr, d, t, tot in zip(products, qtys, prices, discounts, taxes, totals):
+            if p == "":
+                continue
+
+            product = Product.objects.get(id=p)
+
+            SalesItem.objects.create(
+                sale=sale,
+                product=product,
+                qty=q,
+                price=pr,
+                discount=d,
+                tax=t,
+                total=tot,
+            )
+
         return redirect("sales_list")
 
-    return render(request, "add_edit_sales.html", {"sale": sale})
+    return render(request, "sales_add_edit.html", {
+        "edit_mode": True,
+        "sale": sale,
+        "items": items,
+        "products": Product.objects.all(),
+        "today": sale.date,
+    })
+
 
 
 @login_required
-def delete_sales(request, sales_id):
-    sale = get_object_or_404(Sale, id=sales_id)
+@transaction.atomic
+def sales_delete(request, pk):
+    sale = get_object_or_404(Sales, pk=pk)
+
+    # restore stock before deleting
+    for item in sale.items.all():
+        product = item.product
+        product.quantity += item.qty
+        product.save()
+
     sale.delete()
     messages.success(request, "Sale deleted successfully.")
     return redirect("sales_list")
 
-# ---------------------------
-# TRANSACTION SUMMARY
-# ---------------------------
-
-@login_required
-def transactions(request):
-    sale = Sale.objects.order_by("-date")
-    purchases = Purchase.objects.order_by("-date")
-
-    return render(
-        request,
-        "transaction.html",
-        {"sale": sale, "purchases": purchases}
-    )
 
 # ---------------------------
-# REPORTS
+# Admin logs (kept here by request)
 # ---------------------------
 
-@login_required
-def report_dashboard(request):
-    total_products = Product.objects.count()
-    total_categories = Category.objects.count()
-    total_suppliers = Supplier.objects.count()
-    low_stock = Product.objects.filter(stock__lt=10).count()
+def logs_view(request):
+    logs = LogEntry.objects.select_related("user", "content_type").order_by("-action_time")[:500]
+    context = dict(admin.site.each_context(request))
+    context.update({"logs": logs, "title": "Admin Activity Logs"})
+    return TemplateResponse(request, "admin_logs.html", context)
 
-    category_breakdown = (
-        Product.objects.values("category__name")
-        .annotate(total=Count("id"))
-        .order_by("-total")
-    )
 
-    return render(request, "report_dashboard.html", {
-        "total_products": total_products,
-        "total_categories": total_categories,
-        "total_suppliers": total_suppliers,
-        "low_stock": low_stock,
-        "category_breakdown": category_breakdown
-    })
+def _get_admin_urls(orig_get_urls):
+    def get_urls():
+        custom_urls = [path("logs/", admin.site.admin_view(logs_view), name="admin_logs")]
+        return custom_urls + orig_get_urls()
+    return get_urls
+
+# patch admin urls (kept per your earlier request)
+admin.site.get_urls = _get_admin_urls(admin.site.get_urls)
 
 
 @login_required
-def stock_summary(request):
-    by_category = (
-        Product.objects.values("category__name")
-        .annotate(total=Count("id"))
-        .order_by("-total")
-    )
-
-    by_supplier = (
-        Product.objects.values("supplier__name")
-        .annotate(total=Count("id"))
-        .order_by("-total")
-    )
-
-    return render(request, "stock_summary.html", {
-        "by_category": by_category,
-        "by_supplier": by_supplier
-    })
-
-
-def _get_safe(obj, attr, default=None):
-    return getattr(obj, attr, default)
-
-
-@login_required
-def stock_report(request):
-    qs = Product.objects.select_related("category").all()
-
-    q = request.GET.get("q")
-    if q:
-        qs = qs.filter(name__icontains=q)
-
-    category_id = request.GET.get("category")
-    if category_id:
-        qs = qs.filter(category_id=category_id)
-
-    categories = Category.objects.all()
-
-    rows = []
-    for p in qs:
-        rows.append({
-            "id": p.id,
-            "name": p.name,
-            "category": getattr(p.category, "name", "—"),
-            "supplier": getattr(_get_safe(p, "supplier"), "name", "—"),
-            "sku": _get_safe(p, "sku", "—"),
-            "price": _get_safe(p, "price", "—"),
-            "cost_price": _get_safe(p, "cost_price", "—"),
-            "quantity": _get_safe(p, "quantity", _get_safe(p, "stock", "—")),
-            "reorder_level": _get_safe(p, "reorder_level", "—"),
-            "updated_at": _get_safe(p, "updated_at", _get_safe(p, "modified", "—")),
-        })
-
-    return render(request, "stock_report.html", {
-        "rows": rows,
-        "categories": categories,
-        "active_category": category_id,
-        "query": q or "",
-    })
-
-
-@login_required
-def stock_report_export_csv(request):
-    qs = Product.objects.select_related("category").all()
-
-    q = request.GET.get("q")
-    if q:
-        qs = qs.filter(name__icontains=q)
-
-    category_id = request.GET.get("category")
-    if category_id:
-        qs = qs.filter(category_id=category_id)
-
-    response = HttpResponse(content_type="text/csv")
-    response["Content-Disposition"] = 'attachment; filename="stock_report.csv"'
-    writer = csv.writer(response)
-
-    writer.writerow([
-        "ID", "Name", "Category", "Supplier", "SKU",
-        "Price", "Cost Price", "Quantity", "Reorder Level", "Updated At"
-    ])
-
-    for p in qs:
-        writer.writerow([
-            p.id,
-            p.name,
-            getattr(p.category, "name", ""),
-            getattr(_get_safe(p, "supplier"), "name", ""),
-            _get_safe(p, "sku", ""),
-            _get_safe(p, "price", ""),
-            _get_safe(p, "cost_price", ""),
-            _get_safe(p, "quantity", _get_safe(p, "stock", "")),
-            _get_safe(p, "reorder_level", ""),
-            _get_safe(p, "updated_at", _get_safe(p, "modified", "")),
-        ])
-
-    return response
-
-# ---------------------------
-# SYSTEM SETTINGS
-# ---------------------------
-
-@login_required
-def settings_view(request):
-    return render(request, "settings.html")
-
-
-def system_config(request):
-    return render(request, "system_config.html")
-
-
-def backup_restore(request):
-    return render(request, "backup_restore.html")
-
-
-def admin_logs(request):
-    return render(request, "admin_logs.html")
-
-
-def security_settings(request):
-    return render(request, "security_settings.html")
-
-
-def appearance_settings(request):
-    return render(request, "appearance_settings.html")
-
-
 @login_required
 def user_home(request):
-    context = {
-        'product_count': Product.objects.count(),
-        'purchase_count': Purchase.objects.count(),
-        'sales_count': Sale.objects.count(),
-    }
-    return render(request, 'user_home.html', context)
-
-
-@login_required
-def user_product_list(request):
-    products = Product.objects.all()
-    return render(request, 'user_product_list.html', {'products': products})
-
-
-@login_required
-def user_product_detail(request, id):
-    product = get_object_or_404(Product, id=id)
-    return render(request, 'user_product_detail.html', {'product': product})
-
-
-@login_required
-
-def user_purchase_list(request):
-    purchases = Purchase.objects.all()
-    return render(request, "user_purchase_list.html", {"purchases": purchases})
-
+    return render(request, 'user_home.html')
 
 
 @login_required
 def user_sales_list(request):
-    sales = Sale.objects.all()
+    sales = Sales.objects.all().order_by("-id")
     return render(request, "user_sales_list.html", {"sales": sales})
 
 
+@login_required
+@transaction.atomic
+def user_sales_add(request):
+    if request.method == "POST":
+
+        customer_name = request.POST.get("customer_name")
+        date = request.POST.get("date")
+
+        subtotal = float(request.POST.get("subtotal") or 0)
+        totaltax = float(request.POST.get("totaltax") or 0)
+        grandtotal = float(request.POST.get("grandtotal") or 0)
+
+        # create sale
+        sale = Sales.objects.create(
+            invoice_no = generate_invoice_no(),
+            customer_name = customer_name,
+            date = date,
+            subtotal = subtotal,
+            total_tax = totaltax,
+            grand_total = grandtotal,
+        )
+
+        # get item lists
+        products = request.POST.getlist("product[]")
+        qtys = request.POST.getlist("qty[]")
+        prices = request.POST.getlist("price[]")
+        discounts = request.POST.getlist("discount[]")
+        taxes = request.POST.getlist("tax[]")
+        totals = request.POST.getlist("total[]")
+
+        # loop through rows
+        for p, q, pr, d, t, tot in zip(products, qtys, prices, discounts, taxes, totals):
+            if p == "":
+                continue  # skip empty rows
+
+            product = Product.objects.get(id=p)
+
+            SalesItem.objects.create(
+                sale=sale,
+                product=product,
+                qty=int(q or 0),
+                price=float(pr or 0),
+                discount=float(d or 0),
+                tax=float(t or 0),
+                total=float(tot or 0),
+            )
+
+            # update stock
+            product.quantity -= int(q)
+            product.save()
+
+        # 🔥 AUTO CREATE SALE ACCOUNTING TRANSACTION
+        create_sales_transaction(sale)
+
+        return redirect("sales_list")
+
+    # GET request
+    return render(request, "user_sales_form.html", {
+        "products": Product.objects.all(),
+        "today": timezone.now().date(),
+    })
+
+
+def user_sales_edit(request, pk):
+    sale = Sales.objects.get(id=pk)
+    items = sale.items.all()
+
+    if request.method == "POST":
+        # Same saving structure as sales_add
+        customer_name = request.POST.get("customer_name")
+        date = request.POST.get("date")
+
+        subtotal = request.POST.get("subtotal") or 0
+        totaltax = request.POST.get("totaltax") or 0
+        grandtotal = request.POST.get("grandtotal") or 0
+
+        # Update sale
+        sale.customer_name = customer_name
+        sale.date = date
+        sale.subtotal = subtotal
+        sale.total_tax = totaltax
+        sale.grand_total = grandtotal
+        sale.save()
+
+        # Delete old items (clean update)
+        sale.items.all().delete()
+
+        # Recreate item rows
+        products = request.POST.getlist("product[]")
+        qtys = request.POST.getlist("qty[]")
+        prices = request.POST.getlist("price[]")
+        discounts = request.POST.getlist("discount[]")
+        taxes = request.POST.getlist("tax[]")
+        totals = request.POST.getlist("total[]")
+
+        for p, q, pr, d, t, tot in zip(products, qtys, prices, discounts, taxes, totals):
+            if p == "":
+                continue
+
+            product = Product.objects.get(id=p)
+
+            SalesItem.objects.create(
+                sale=sale,
+                product=product,
+                qty=q,
+                price=pr,
+                discount=d,
+                tax=t,
+                total=tot,
+            )
+
+        return redirect("user_sales_list")
+
+    return render(request, "user_sales_form.html", {
+        "edit_mode": True,
+        "sale": sale,
+        "items": items,
+        "products": Product.objects.all(),
+        "today": sale.date,
+    })
+
 
 
 @login_required
-def user_profile(request):
-    return render(request, 'user_profile.html')
+@transaction.atomic
+def user_sales_delete(request, pk):
+    sale = get_object_or_404(Sales, pk=pk)
 
+    # restore stock before deleting
+    for item in sale.items.all():
+        product = item.product
+        product.quantity += item.qty
+        product.save()
 
-@login_required
-def user_settings(request):
-    if request.method == 'POST':
-        form = PasswordChangeForm(request.user, request.POST)
-        if form.is_valid():
-            user = form.save()
-            update_session_auth_hash(request, user)
-    else:
-        form = PasswordChangeForm(request.user)
-    return render(request, 'user_settings.html', {'form': form})
+    sale.delete()
+    messages.success(request, "Sale deleted successfully.")
+    return redirect("user_sales_list")
 
-
-@login_required
-def user_reports(request):
-    return render(request, 'user_reports.html')
-
+# ---------------------------
+# Password reset via OTP (request, verify, reset)
+# ---------------------------
 
 def request_otp_view(request):
     if request.method == "POST":
         form = RequestOTPForm(request.POST)
         if form.is_valid():
-            email = form.cleaned_data['email'].strip().lower()
+            email = form.cleaned_data["email"].strip().lower()
             try:
                 user = User.objects.get(email__iexact=email)
             except User.DoesNotExist:
-                # For security, still act like we sent an OTP
                 messages.success(request, "If that email exists, an OTP has been sent.")
-                return redirect('request-otp')
-            # create OTP
+                return redirect("request_otp")
             otp_obj = create_otp_for_user(user, ttl_minutes=10)
             try:
                 send_otp_email(user, otp_obj)
-            except Exception as e:
-                # log e in real app
+            except Exception:
                 messages.error(request, "Failed to send OTP. Try again later.")
-                return redirect('request-otp')
+                return redirect("request_otp")
             messages.success(request, "If that email exists, an OTP has been sent.")
-            # redirect to OTP verify page — hide email in a hidden field or pass via GET
-            return redirect(reverse('verify-otp') + f"?email={email}")
+            return redirect(reverse("verify_otp") + f"?email={email}")
     else:
         form = RequestOTPForm()
-    return render(request, 'app/request_otp.html', {'form': form})
+    return render(request, "request_otp.html", {"form": form})
+
 
 def verify_otp_view(request):
     initial = {}
+    email = ""
     if request.method == "GET":
-        email = request.GET.get('email', '')
-        initial['email'] = email
+        email = request.GET.get("email", "")
+        initial["email"] = email
     if request.method == "POST":
         form = VerifyOTPForm(request.POST)
         if form.is_valid():
-            email = form.cleaned_data['email'].strip().lower()
-            otp = form.cleaned_data['otp'].strip()
+            email = form.cleaned_data["email"].strip().lower()
+            otp = form.cleaned_data["otp"].strip()
             try:
                 user = User.objects.get(email__iexact=email)
             except User.DoesNotExist:
                 messages.error(request, "Invalid OTP or email.")
-                return redirect('verify-otp')
-            # Look for latest unused OTP for this user
-            try:
-                otp_obj = PasswordResetOTP.objects.filter(user=user, used=False, otp=otp).order_by('-created_at').first()
-            except PasswordResetOTP.DoesNotExist:
-                otp_obj = None
+                return redirect("verify_otp")
+            otp_obj = PasswordResetOTP.objects.filter(user=user, used=False, otp=otp).order_by("-created_at").first()
             if not otp_obj:
                 messages.error(request, "Invalid OTP.")
-                return redirect('verify-otp')
+                return redirect("verify_otp")
             if otp_obj.is_expired():
                 messages.error(request, "OTP expired. Request a new one.")
-                return redirect('request-otp')
-            # mark used to prevent reuse
+                return redirect("request_otp")
             otp_obj.used = True
             otp_obj.save()
-            # create a short-lived token or just redirect to reset password with user id in session
-            request.session['password_reset_user_id'] = user.id
-            # optional: set a flag that allows only password reset in next N minutes
-            request.session['password_reset_allowed_at'] = timezone.now().isoformat()
-            return redirect('reset-password')
+            request.session["password_reset_user_id"] = user.id
+            request.session["password_reset_allowed_at"] = timezone.now().isoformat()
+            return redirect("reset_password")
+        messages.error(request, "Invalid data.")
     else:
         form = VerifyOTPForm(initial=initial)
-    return render(request, 'app/verify_otp.html', {'form': form})
+    return render(request, "verify_otp.html", {"form": form, "email": email})
 
-from django.contrib.auth import login
 
 def reset_password_view(request):
-    user_id = request.session.get('password_reset_user_id')
+    user_id = request.session.get("password_reset_user_id")
     if not user_id:
         messages.error(request, "No password reset session found. Start again.")
-        return redirect('request-otp')
+        return redirect("request_otp")
     user = get_object_or_404(User, pk=user_id)
     if request.method == "POST":
         form = ResetPasswordForm(user, request.POST)
         if form.is_valid():
             form.save()
             # cleanup session
-            try:
-                del request.session['password_reset_user_id']
-                del request.session['password_reset_allowed_at']
-            except KeyError:
-                pass
+            request.session.pop("password_reset_user_id", None)
+            request.session.pop("password_reset_allowed_at", None)
             messages.success(request, "Password updated successfully. You can now log in.")
-            return redirect('login')  # change to your login url name
+            return redirect("login")
+        messages.error(request, "Please fix the errors.")
     else:
         form = ResetPasswordForm(user)
-    return render(request, 'app/reset_password.html', {'form': form})
+    return render(request, "reset_password_otp.html", {"form": form})
+
+
+
+
+import json
+from django.db.models import Sum
+from django.shortcuts import render
+from .models import Sales, Purchase
+
+
+def analytics_view(request):
+    # Aggregate sales grouped by date
+    sales_data = (
+        Sales.objects.values("date")
+        .annotate(total=Sum("grand_total"))
+        .order_by("date")
+    )
+
+    # Aggregate purchases grouped by date
+    purchase_data = (
+        Purchase.objects.values("date")
+        .annotate(total=Sum("grand_total"))
+        .order_by("date")
+    )
+
+    # Convert queryset → Python lists
+    sales_labels = [s["date"].strftime("%Y-%m-%d") for s in sales_data]
+    sales_totals = [float(s["total"]) for s in sales_data]
+
+    purchase_labels = [p["date"].strftime("%Y-%m-%d") for p in purchase_data]
+    purchase_totals = [float(p["total"]) for p in purchase_data]
+
+    # Convert Python lists → JSON (this is required for Chart.js)
+    context = {
+        "sales_labels": json.dumps(sales_labels),
+        "sales_totals": json.dumps(sales_totals),
+        "purchase_labels": json.dumps(purchase_labels),
+        "purchase_totals": json.dumps(purchase_totals),
+    }
+
+    return render(request, "analytics.html", context)
+
+
+
+def user_profile(request):
+    user = request.user
+    return render(request, "user_profile.html", {"user": user})
+
+from django.contrib import messages
+
+@login_required
+def edit_profile(request):
+    user = request.user
+
+    if request.method == "POST":
+        user.username = request.POST.get("username")
+        user.first_name = request.POST.get("first_name")
+        user.last_name = request.POST.get("last_name")
+        user.email = request.POST.get("email")
+        user.phone = request.POST.get("phone")
+        user.save()
+
+        messages.success(request, "Profile updated successfully!")
+        return redirect("user_profile")
+
+    return render(request, "edit_profile.html", {"user": user})

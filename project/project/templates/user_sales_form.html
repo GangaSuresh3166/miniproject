@@ -1,0 +1,398 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% if edit_mode %}Edit Sale{% else %}Add Sale{% endif %} — Admin Dashboard</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+  <style>
+    body {
+      background: radial-gradient(circle at top left, #000000, #000000);
+      color: #e5e7eb;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    nav.navbar {
+      background: linear-gradient(90deg, #ffffff, #ffffff);
+    }
+
+    .form-container {
+      background: rgba(17, 24, 39, 0.95);
+      border-radius: 18px;
+      padding: 32px;
+      margin: 40px 0;
+      box-shadow: 0 0 25px rgba(0, 0, 0, 0.6);
+    }
+
+    .form-label {
+      font-weight: 600;
+      color: #9ca3af;
+    }
+
+    .form-control,
+    .form-select {
+      background: rgba(31, 41, 55, 0.92);
+      border: 1px solid #374151;
+      color: #e5e7eb;
+      height: 44px;
+    }
+
+    .section-title {
+      color: #60a5fa;
+      font-size: 1.1rem;
+      margin-top: 18px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #374151;
+    }
+
+    .table-dark-custom {
+      background: rgba(30, 41, 59, 0.7);
+      color: #e5e7eb;
+    }
+
+    .table-dark-custom th {
+      background: rgba(51, 65, 85, 0.9);
+      color: #93c5fd;
+    }
+
+    .btn-add-row {
+      background: #2563eb;
+      color: white;
+      border-radius: 8px;
+      padding: 6px 14px;
+      border: 0;
+    }
+
+    .btn-del {
+      background: #dc2626;
+      color: #fff;
+      border-radius: 6px;
+      padding: 4px 8px;
+      border: 0;
+    }
+
+    .panel {
+      background: rgba(17, 24, 39, 0.6);
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #2b3440;
+      color: #cbd5e1;
+    }
+
+    .small-muted {
+      color: #9ca3af;
+    }
+
+    .readonly {
+      background: transparent;
+      border: none;
+      color: #e5e7eb;
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="navbar navbar-expand-lg px-4">
+    <a class="navbar-brand fw-bold"><i class="bi bi-receipt me-2"></i>Staff Dashboard</a>
+    <div class="ms-auto">
+      <a href="{% url 'user_sales_list' %}" class="btn btn-light btn-sm"><i class="bi bi-card-list"></i> SALES LIST</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="form-container">
+
+      <h3 class="text-center text-info fw-bold mb-3">
+        {% if edit_mode %}<i class="bi bi-pencil-square me-2"></i>Edit Sale{% else %}<i class="bi bi-plus-circle-fill me-2"></i>Add Sale{% endif %}
+      </h3>
+
+      <form method="POST" id="sales-form">{% csrf_token %}
+
+        <!-- Top row: customer + date + totals snapshot -->
+        <div class="row g-3 mb-3">
+          <div class="col-md-5">
+            <label class="form-label">Customer Name</label>
+            <input type="text" name="customer_name" class="form-control" value="{{ sale.customer_name|default:'' }}">
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Date</label>
+            <input type="date" name="date" class="form-control" value="{{ today|date:'Y-m-d' }}">
+          </div>
+
+           <div class="col-md-4 d-flex align-items-center justify-content-end">
+            <div class="text-end small-muted">
+              <div>Subtotal</div>
+              <div class="h5">₹ <span id="subtotal_display">0.00</span></div>
+              <div class="mt-1">Total Tax</div>
+              <div class="h6">₹ <span id="totaltax_display">0.00</span></div>
+              <div class="mt-1">Grand Total</div>
+              <div class="h4">₹ <span id="grandtotal_display">0.00</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Items -->
+        <div class="section-title">Sale Items</div>
+
+        <div class="table-responsive">
+          <table class="table table-dark-custom table-bordered align-middle text-center mb-0">
+            <thead>
+              <tr>
+                <th style="width:33%">Product</th>
+                <th style="width:8%">Qty</th>
+                <th style="width:12%">Price</th>
+                <th style="width:12%">Discount %</th>
+                <th style="width:12%">Tax %</th>
+                <th style="width:12%">Line Total</th>
+                <th style="width:6%">—</th>
+              </tr>
+            </thead>
+            <tbody id="items-body">
+              {% if edit_mode %}
+                {% for item in items %}
+                  <tr class="item-row">
+                    <td>
+                      <select name="product[]" class="form-select item-product">
+                        <option value="">-- Select product --</option>
+                        {% for p in products %}
+                        <option value="{{ p.id }}"
+                                data-price="{{ p.selling_price }}"
+                                data-discount="{{ p.discount }}"
+                                data-tax="{{ p.tax }}"
+                                data-stock="{{ p.quantity }}"
+                                {% if p.id == item.product.id %}selected{% endif %}>
+                          {{ p.name }}
+                        </option>
+                        {% endfor %}
+                      </select>
+                      <div class="form-text small-muted stock-info"></div>
+                    </td>
+
+                    <td><input type="number" name="qty[]" class="form-control item-qty" value="{{ item.qty }}" min="1"></td>
+                    <td><input type="text" name="price[]" class="form-control item-price" value="{{ item.price }}"></td>
+                    <td><input type="text" name="discount[]" class="form-control item-disc" value="{{ item.discount }}"></td>
+                    <td><input type="text" name="tax[]" class="form-control item-tax" value="{{ item.tax }}"></td>
+                    <td><input type="text" name="total[]" class="form-control item-total text-end" value="{{ item.total }}" readonly></td>
+                    <td><button type="button" class="btn btn-del remove-row">X</button></td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr class="item-row">
+                  <td>
+                    <select name="product[]" class="form-select item-product">
+                      <option value="">-- Select product --</option>
+                      {% for p in products %}
+                      <option value="{{ p.id }}" data-price="{{ p.selling_price }}" data-discount="{{ p.discount }}" data-tax="{{ p.tax }}" data-stock="{{ p.quantity }}">{{ p.name }}</option>
+                      {% endfor %}
+                    </select>
+                    <div class="form-text small-muted stock-info"></div>
+                  </td>
+
+                  <td><input type="number" name="qty[]" class="form-control item-qty" value="1" min="1"></td>
+                  <td><input type="text" name="price[]" class="form-control item-price"></td>
+                  <td><input type="text" name="discount[]" class="form-control item-disc"></td>
+                  <td><input type="text" name="tax[]" class="form-control item-tax"></td>
+                  <td><input type="text" name="total[]" class="form-control item-total text-end" readonly></td>
+                  <td><button type="button" class="btn btn-del remove-row">X</button></td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mb-3 mt-3">
+          <button type="button" class="btn btn-add-row" id="addRow"><i class="bi bi-plus"></i> Add Item</button>
+        </div>
+
+        <!-- Amounts -->
+        <div class="section-title">Amount & Calculations</div>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Subtotal</label>
+            <input type="text" id="subtotal_input" name="subtotal" class="form-control readonly" readonly>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Total Tax</label>
+            <input type="text" id="totaltax_input" name="totaltax" class="form-control readonly" readonly>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Grand Total</label>
+            <input type="text" id="grandtotal_input" name="grandtotal" class="form-control readonly" readonly>
+          </div>
+        </div>
+
+        <div class="text-end mt-4">
+          <button class="btn btn-primary px-4" type="submit">{% if edit_mode %}Update Sale{% else %}Save Sale{% endif %}</button>
+          <a href="{% url 'user_sales_list' %}" class="btn btn-secondary px-4 ms-2">Cancel</a>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Utility: parse float safely
+    const toFloat = v => { if (v === null || v === undefined || v === '') return 0; v = ('' + v).replace(/,/g, ''); const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+
+    function recalcRow(row) {
+      const price = toFloat(row.querySelector('.item-price').value);
+      const qty = Math.max(0, Math.floor(toFloat(row.querySelector('.item-qty').value)));
+      const discount = toFloat(row.querySelector('.item-disc').value);
+      const tax = toFloat(row.querySelector('.item-tax').value);
+
+      const net = price * qty;
+      const discountAmount = net * (discount / 100);
+      const taxable = Math.max(0, net - discountAmount);
+      const taxAmount = taxable * (tax / 100);
+      const rowTotal = taxable + taxAmount;
+
+      const totalEl = row.querySelector('.item-total');
+      if (totalEl) totalEl.value = rowTotal.toFixed(2);
+
+      // update stock info color if needed
+      const sel = row.querySelector('.item-product');
+      const opt = sel && sel.options[sel.selectedIndex];
+      const stockInfo = row.querySelector('.stock-info');
+      if (opt) {
+        const avail = parseInt(opt.dataset.stock || 0, 10);
+        if (avail >= 0 && qty > avail) { stockInfo.textContent = `Stock: ${avail} — insufficient!`; stockInfo.style.color = '#ffbaba'; }
+        else { stockInfo.textContent = `Stock: ${avail}`; stockInfo.style.color = ''; }
+      }
+
+      recalcTotals();
+    }
+
+    function recalcTotals() {
+      let subtotal = 0, totaltax = 0;
+      document.querySelectorAll('.item-row').forEach(row => {
+        const price = toFloat(row.querySelector('.item-price').value);
+        const qty = Math.max(0, Math.floor(toFloat(row.querySelector('.item-qty').value)));
+        const discount = toFloat(row.querySelector('.item-disc').value);
+        const tax = toFloat(row.querySelector('.item-tax').value);
+
+        const net = price * qty;
+        const discountAmount = net * (discount / 100);
+        const taxable = Math.max(0, net - discountAmount);
+        const taxAmount = taxable * (tax / 100);
+
+        subtotal += taxable;
+        totaltax += taxAmount;
+      });
+
+      const grand = subtotal + totaltax;
+
+      document.getElementById('subtotal_display').textContent = subtotal.toFixed(2);
+      document.getElementById('totaltax_display').textContent = totaltax.toFixed(2);
+      document.getElementById('grandtotal_display').textContent = grand.toFixed(2);
+
+      document.getElementById('subtotal_input').value = subtotal.toFixed(2);
+      document.getElementById('totaltax_input').value = totaltax.toFixed(2);
+      document.getElementById('grandtotal_input').value = grand.toFixed(2);
+    }
+
+    // Wire events on a row (works for cloned or existing rows)
+    function wireRow(row) {
+      const sel = row.querySelector('.item-product');
+      const qty = row.querySelector('.item-qty');
+      const price = row.querySelector('.item-price');
+      const disc = row.querySelector('.item-disc');
+      const tax = row.querySelector('.item-tax');
+      const remove = row.querySelector('.remove-row');
+
+      // product change: fill meta
+      if (sel) {
+        sel.addEventListener('change', () => {
+          const opt = sel.options[sel.selectedIndex];
+          if (!opt || !opt.value) { price.value = ''; disc.value = ''; tax.value = ''; recalcRow(row); return; }
+          // Auto-fill product meta (this WILL overwrite price/discount/tax with product defaults)
+          price.value = (opt.dataset.price || 0);
+          disc.value = (opt.dataset.discount || 0);
+          tax.value = (opt.dataset.tax || 0);
+          recalcRow(row);
+        });
+      }
+
+      // qty / price / disc / tax input
+      [qty, price, disc, tax].forEach(inp => inp && inp.addEventListener('input', () => recalcRow(row)));
+
+      // remove
+      if (remove) {
+        remove.addEventListener('click', () => {
+          if (document.querySelectorAll('.item-row').length > 1) { row.remove(); recalcTotals(); }
+          else { // clear
+            if (sel) sel.selectedIndex = 0; if (price) price.value = ''; if (disc) disc.value = ''; if (tax) tax.value = ''; if (qty) qty.value = 1; const t = row.querySelector('.item-total'); if (t) t.value = '0.00'; recalcTotals();
+          }
+        });
+      }
+    }
+
+    // add new blank row
+    const addRowBtn = document.getElementById('addRow');
+    if (addRowBtn) addRowBtn.addEventListener('click', () => {
+      const tbody = document.getElementById('items-body');
+      const first = tbody.querySelector('.item-row');
+      const clone = first.cloneNode(true);
+      // reset values
+      clone.querySelectorAll('input').forEach(inp => {
+        if (inp.classList.contains('item-qty')) inp.value = 1; else if (inp.classList.contains('item-total')) inp.value = '0.00'; else inp.value = '';
+      });
+      clone.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+      // attach listeners
+      wireRow(clone);
+      tbody.appendChild(clone);
+      clone.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // ensure initial recalc
+      recalcRow(clone);
+    });
+
+    // initialize existing rows: wire and auto-fill from selected products
+    document.querySelectorAll('.item-row').forEach(r => {
+      wireRow(r);
+      const sel = r.querySelector('.item-product');
+      if (sel && sel.value) {
+        // trigger change so product meta fills (this enforces auto-fill in edit mode as requested)
+        sel.dispatchEvent(new Event('change'));
+      } else {
+        // still compute totals for empty rows
+        recalcRow(r);
+      }
+    });
+
+    // trigger initial recalc (use load to ensure any server-rendered values are present)
+    window.addEventListener('load', () => setTimeout(recalcTotals, 50));
+
+    // form submit validation
+    const salesForm = document.getElementById('sales-form');
+    if (salesForm) salesForm.addEventListener('submit', function (e) {
+      // ensure at least one product selected and stock ok
+      const rows = document.querySelectorAll('.item-row');
+      let valid = false;
+      const errors = [];
+      rows.forEach((row, idx) => {
+        const sel = row.querySelector('.item-product');
+        const qty = Math.max(0, Math.floor(toFloat(row.querySelector('.item-qty').value)));
+        if (sel && sel.value) valid = true;
+        if (sel && sel.value) {
+          const opt = sel.options[sel.selectedIndex];
+          const avail = parseInt(opt.dataset.stock || 0, 10);
+          if (qty <= 0) errors.push(`Row ${idx + 1}: quantity must be at least 1`);
+          if (avail >= 0 && qty > avail) errors.push(`Row ${idx + 1}: requested qty (${qty}) exceeds stock (${avail})`);
+        }
+      });
+      if (!valid) { e.preventDefault(); alert('Please add at least one product.'); return; }
+      if (errors.length) { e.preventDefault(); alert(errors.join('\n')); return; }
+      // otherwise allow submit
+    });
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

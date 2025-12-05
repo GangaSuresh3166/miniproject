@@ -1,0 +1,359 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ title|default:"Purchase Form" }} — Admin Dashboard</title>
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+  <style>
+    /* (kept your dark theme styles; condensed for brevity) */
+    body { background: radial-gradient(circle at top left,#0d1117,#000); color:#e5e7eb; font-family:'Segoe UI',sans-serif; }
+    nav.navbar { background: linear-gradient(90deg,#111827,#ededed); }
+    .form-container { background: rgba(17,24,39,0.95); border-radius:18px; padding:32px; margin:40px 0; box-shadow:0 0 25px rgba(0,0,0,0.6); }
+    .form-label{ font-weight:600; color:#9ca3af; }
+    .form-control, .form-select { background: rgba(31,41,55,0.92); border:1px solid #374151; color:#e5e7eb; height:44px; }
+    .section-title { color:#60a5fa; font-size:1.2rem; margin-top:22px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #374151; }
+    .table-dark-custom { background: rgba(30,41,59,0.7); color:#e5e7eb; }
+    .table-dark-custom th { background: rgba(51,65,85,0.9); color:#93c5fd; }
+    .btn-add-row { background:#2563eb; color:white; border-radius:8px; padding:6px 14px; }
+    .btn-del { background:#dc2626; color:#fff; border-radius:6px; padding:4px 8px; }
+    .panel { background: rgba(17,24,39,0.6); padding:12px; border-radius:8px; border:1px solid #2b3440; color:#cbd5e1; }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg px-4">
+    <a class="navbar-brand fw-bold"><i class="bi bi-receipt me-2"></i>Admin Dashboard</a>
+    <div class="ms-auto">
+      <a href="{% url 'purchase_list' %}" class="btn btn-light btn-sm"><i class="bi bi-card-list"></i> PURCHASES</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="form-container">
+
+      <h3 class="text-center text-info fw-bold mb-3">
+        {% if form.instance.pk %}<i class="bi bi-pencil-square me-2"></i>Edit Purchase{% else %}<i class="bi bi-plus-circle-fill me-2"></i>Add Purchase{% endif %}
+      </h3>
+
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags }} text-center">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+
+      <form method="POST" id="purchase-form">{% csrf_token %}
+
+        <!-- 2-column top -->
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Purchase No</label>
+            {{ form.purchase_no }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Date</label>
+            {{ form.date }}
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Payment Type</label>
+            {{ form.payment_type }}
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Supplier</label>
+            <!-- supplier select must match supplier IDs -->
+            <select id="supplier-select" name="supplier" class="form-select">
+              <option value="">-- Select supplier --</option>
+              {% for sup in suppliers %}
+                <option value="{{ sup.id }}">{{ sup.supplier_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <!-- Supplier quick details panel -->
+        <div class="section-title">Supplier Info</div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="panel">
+              <strong id="sup-name">Name:</strong><br>
+              <small id="sup-company">Company:</small><br>
+              <small id="sup-contact">Phone:</small><br>
+              <small id="sup-email">Email:</small><br>
+              <small id="sup-gst">GST:</small>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="panel">
+              <strong>Address</strong>
+              <div id="sup-address" style="margin-top:8px; font-size:0.95rem;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Items -->
+        <div class="section-title">Purchase Items</div>
+
+        <table class="table table-dark-custom table-bordered align-middle text-center">
+          <thead>
+            <tr>
+              <th style="width:32%">Product</th>
+              <th style="width:8%">Qty</th>
+              <th style="width:12%">Unit Price</th>
+              <th style="width:12%">Discount</th>
+              <th style="width:12%">Tax</th>
+              <th style="width:12%">Line Total</th>
+              <th style="width:6%">—</th>
+            </tr>
+          </thead>
+          <tbody id="items-body"></tbody>
+        </table>
+
+        <div class="mb-3">
+          <button type="button" class="btn btn-add-row" onclick="addRow()"><i class="bi bi-plus"></i> Add Item</button>
+        </div>
+
+        <!-- Amounts: 2-column -->
+        <div class="section-title">Amount & Calculations</div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Subtotal</label>
+            {{ form.subtotal }}  <!-- id: id_subtotal -->
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Discount Total</label>
+            {{ form.discount_total }}
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Tax Total</label>
+            {{ form.tax_total }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Other Charges</label>
+            {{ form.other_charges }}
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Grand Total</label>
+            {{ form.grand_total }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Amount Paid</label>
+            {{ form.amount_paid }}
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Balance</label>
+            {{ form.balance }}
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Payment Status</label>
+            {{ form.payment_status }}
+          </div>
+        </div>
+
+        <div class="section-title">Additional Information</div>
+        <div class="mb-3">
+          <label class="form-label">Notes</label>
+          {{ form.notes }}
+        </div>
+
+        <div class="text-end mt-3">
+          <button type="submit" class="btn btn-submit px-4"><i class="bi bi-check-circle"></i> Save</button>
+          <a href="{% url 'purchase_list' %}" class="btn btn-cancel px-4 ms-2"><i class="bi bi-x-circle"></i> Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Pass product meta to JS (used for quick fill) -->
+  <script>
+    // products_map: id -> {selling_price, cost_price, tax, discount, name}
+    const productsMap = {};
+    {% for p in products %}
+      productsMap["{{ p.id }}"] = {
+        id: "{{ p.id }}",
+        name: "{{ p.name|escapejs }}",
+        selling_price: "{{ p.selling_price|default:0 }}",
+        cost_price: "{{ p.cost_price|default:0 }}",
+        tax: "{{ p.tax|default:0 }}",
+        discount: "{{ p.discount|default:0 }}"
+      };
+    {% endfor %}
+  </script>
+
+  <script>
+    // Supplier auto-fill via AJAX GET JSON endpoint (defined below)
+    document.getElementById('supplier-select').addEventListener('change', async function(e){
+      const supId = this.value;
+      if(!supId){
+        // clear UI
+        document.getElementById('sup-name').textContent = 'Name:';
+        document.getElementById('sup-company').textContent = 'Company:';
+        document.getElementById('sup-contact').textContent = 'Phone:';
+        document.getElementById('sup-email').textContent = 'Email:';
+        document.getElementById('sup-gst').textContent = 'GST:';
+        document.getElementById('sup-address').textContent = '';
+        return;
+      }
+      try{
+        const res = await fetch("{% url 'supplier_detail_json' 0 %}".replace('/0/','/'+supId+'/'));
+        if(!res.ok) throw new Error('Network response not ok');
+        const data = await res.json();
+        document.getElementById('sup-name').textContent = 'Name: ' + (data.supplier_name || '');
+        document.getElementById('sup-company').textContent = 'Company: ' + (data.company_name || '');
+        document.getElementById('sup-contact').textContent = 'Phone: ' + (data.phone || '');
+        document.getElementById('sup-email').textContent = 'Email: ' + (data.email || '');
+        document.getElementById('sup-gst').textContent = 'GST: ' + (data.gst_number || '');
+        let addressParts = [data.address, data.city, data.state, data.postal_code, data.country].filter(Boolean);
+        document.getElementById('sup-address').textContent = addressParts.join(', ');
+      } catch(err){
+        console.error('supplier fetch error', err);
+      }
+    });
+
+    // Items table management
+    function addRow(prefillProductId) {
+      // build select options from productsMap
+      let productOptions = '<option value="">-- Select product --</option>';
+      for (const id in productsMap) {
+        const p = productsMap[id];
+        productOptions += `<option value="${id}">${p.name}</option>`;
+      }
+
+      const tbody = document.getElementById('items-body');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>
+          <select class="form-select item-product">${productOptions}</select>
+        </td>
+        <td><input type="number" class="form-control item-qty" value="1" min="0"></td>
+        <td><input type="number" class="form-control item-price" value="0" step="0.01"></td>
+        <td><input type="number" class="form-control item-disc" value="0" step="0.01"></td>
+        <td><input type="number" class="form-control item-tax" value="0" step="0.01"></td>
+        <td><input type="number" class="form-control item-total" value="0" readonly></td>
+        <td><button type="button" class="btn btn-del">X</button></td>
+      `;
+      tbody.appendChild(tr);
+
+      // prefill selection if id provided
+      if(prefillProductId) {
+        tr.querySelector('.item-product').value = prefillProductId;
+        fillProductToRow(tr, prefillProductId);
+      }
+
+      bindRowEvents(tr);
+    }
+
+    function bindRowEvents(tr) {
+      tr = tr || document;
+      tr.querySelectorAll('.item-product').forEach(sel => sel.addEventListener('change', onProductChange));
+      tr.querySelectorAll('.item-qty, .item-price, .item-disc, .item-tax').forEach(inp => inp.addEventListener('input', calculateItemTotals));
+      tr.querySelectorAll('.btn-del').forEach(btn => btn.addEventListener('click', function(){ this.closest('tr').remove(); calculateTotals(); }));
+    }
+
+    function onProductChange(e) {
+      const sel = e.target;
+      const tr = sel.closest('tr');
+      const pid = sel.value;
+      if (!pid) {
+        // clear price/tax/discount
+        tr.querySelector('.item-price').value = 0;
+        tr.querySelector('.item-disc').value = 0;
+        tr.querySelector('.item-tax').value = 0;
+        tr.querySelector('.item-total').value = 0;
+        calculateTotals();
+        return;
+      }
+
+      // Use productsMap for immediate fill
+      if (productsMap[pid]) {
+        fillProductToRow(tr, pid);
+        calculateItemTotals();
+      } else {
+        // fallback: fetch detail from server (optional)
+        fetch("{% url 'product_detail_json' 0 %}".replace('/0/','/'+pid+'/'))
+          .then(r => r.json())
+          .then(data => {
+            // update productsMap cache
+            productsMap[pid] = data;
+            fillProductToRow(tr, pid);
+            calculateItemTotals();
+          }).catch(err => console.error(err));
+      }
+    }
+
+    function fillProductToRow(tr, pid) {
+      const meta = productsMap[pid] || {};
+      const price = parseFloat(meta.selling_price || meta.cost_price || 0).toFixed(2);
+      const tax = parseFloat(meta.tax || 0).toFixed(2);
+      const disc = parseFloat(meta.discount || 0).toFixed(2);
+
+      tr.querySelector('.item-price').value = price;
+      tr.querySelector('.item-disc').value = disc;
+      tr.querySelector('.item-tax').value = tax;
+    }
+
+    function calculateItemTotals() {
+      const rows = document.querySelectorAll('#items-body tr');
+      let subtotal = 0, discTotal = 0, taxTotal = 0;
+
+      rows.forEach(row => {
+        const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+        const price = parseFloat(row.querySelector('.item-price').value) || 0;
+        const disc = parseFloat(row.querySelector('.item-disc').value) || 0;
+        const tax = parseFloat(row.querySelector('.item-tax').value) || 0;
+
+        const line = (qty * price) - disc + tax;
+        row.querySelector('.item-total').value = line.toFixed(2);
+
+        subtotal += qty * price;
+        discTotal += disc;
+        taxTotal += tax;
+      });
+
+      // write into Django fields (IDs generated by form)
+      const id_subtotal = document.getElementById('id_subtotal');
+      const id_discount_total = document.getElementById('id_discount_total');
+      const id_tax_total = document.getElementById('id_tax_total');
+
+      if(id_subtotal) id_subtotal.value = subtotal.toFixed(2);
+      if(id_discount_total) id_discount_total.value = discTotal.toFixed(2);
+      if(id_tax_total) id_tax_total.value = taxTotal.toFixed(2);
+
+      calculateTotals();
+    }
+
+    function calculateTotals(){
+      const subtotal = parseFloat(document.getElementById('id_subtotal')?.value) || 0;
+      const disc = parseFloat(document.getElementById('id_discount_total')?.value) || 0;
+      const tax = parseFloat(document.getElementById('id_tax_total')?.value) || 0;
+      const other = parseFloat(document.getElementById('id_other_charges')?.value) || 0;
+      const paid = parseFloat(document.getElementById('id_amount_paid')?.value) || 0;
+
+      const grand = subtotal - disc + tax + other;
+      const bal = grand - paid;
+
+      if(document.getElementById('id_grand_total')) document.getElementById('id_grand_total').value = grand.toFixed(2);
+      if(document.getElementById('id_balance')) document.getElementById('id_balance').value = bal.toFixed(2);
+    }
+
+    // initial bindings
+    document.addEventListener('DOMContentLoaded', function(){
+      // add one empty row by default
+      addRow();
+
+      // listen totals changes for other charges / paid fields
+      document.querySelectorAll('#id_other_charges, #id_amount_paid, #id_discount_total, #id_tax_total, #id_subtotal')
+        .forEach(el => el && el.addEventListener('input', calculateTotals));
+    });
+  </script>
+</body>
+</html>
+

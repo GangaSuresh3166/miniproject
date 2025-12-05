@@ -1,26 +1,28 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard — Inventory System</title>
+    <title>Admin Dashboard — App System</title>
 
-    <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 
     <style>
         body {
-            background: #f5f7fb;
+            background: #0f0f0f;
             font-family: "Inter", sans-serif;
+            color: #e5e5e5;
         }
 
         /* ---------------- SIDEBAR ---------------- */
         .sidebar {
             height: 100vh;
             width: 250px;
-            background: #fff;
-            border-right: 1px solid #e6e6e6;
+            background: #1b1b1b;
+            border-right: 1px solid #2a2a2a;
             position: fixed;
             top: 0;
             left: 0;
@@ -32,6 +34,7 @@
             font-weight: 700;
             padding-left: 20px;
             margin-bottom: 30px;
+            color: #fff;
         }
 
         .sidebar a {
@@ -39,7 +42,7 @@
             align-items: center;
             padding: 12px 20px;
             font-size: 0.95rem;
-            color: #333;
+            color: #cfcfcf;
             text-decoration: none;
             transition: 0.2s;
         }
@@ -51,8 +54,8 @@
 
         .sidebar a:hover,
         .sidebar a.active {
-            background: #eef5ff;
-            color: #0055ff;
+            background: #2a2a2a;
+            color: #0d6efd;
             font-weight: 600;
         }
 
@@ -60,12 +63,13 @@
         .topbar {
             margin-left: 250px;
             height: 70px;
-            background: #fff;
-            border-bottom: 1px solid #e6e6e6;
+            background: #1b1b1b;
+            border-bottom: 1px solid #2a2a2a;
             padding: 10px 25px;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            color: #fff;
         }
 
         /* ---------------- MAIN CONTENT ---------------- */
@@ -75,33 +79,38 @@
         }
 
         .metric-box {
-            background: #fff;
+            background: #1b1b1b;
             padding: 22px;
             border-radius: 12px;
-            box-shadow: 0 2px 7px rgba(0,0,0,0.05);
+            border: 1px solid #2a2a2a;
             transition: 0.2s;
         }
 
         .metric-box:hover {
             transform: translateY(-4px);
+            box-shadow: 0 4px 20px rgba(0, 150, 255, 0.15);
         }
 
         .metric-title {
             font-size: 0.9rem;
-            color: #555;
+            color: #bbb;
         }
 
         .metric-value {
             font-size: 1.9rem;
             font-weight: 700;
-            color: #333;
+            color: #fff;
         }
 
         .chart-box {
-            background: #fff;
+            background: #1b1b1b;
             padding: 25px;
             border-radius: 12px;
-            box-shadow: 0 2px 7px rgba(0,0,0,0.05);
+            border: 1px solid #2a2a2a;
+        }
+
+        canvas {
+            background: transparent !important;
         }
     </style>
 </head>
@@ -110,7 +119,7 @@
 
     <!-- SIDEBAR -->
     <div class="sidebar">
-        <div class="logo">⚙️ Inventory Admin</div>
+        <div class="logo">⚙️ App Admin</div>
 
         <a href="{% url 'admin_home' %}" class="active"><i class="bi bi-speedometer2"></i> Dashboard</a>
         <a href="{% url 'users_list' %}"><i class="bi bi-people"></i> Users</a>
@@ -119,55 +128,40 @@
         <a href="{% url 'category_list' %}"><i class="bi bi-tags"></i> Categories</a>
         <a href="{% url 'sales_list' %}"><i class="bi bi-currency-dollar"></i> Sales</a>
         <a href="{% url 'purchase_list' %}"><i class="bi bi-cart4"></i> Purchases</a>
-        <a href="{% url 'transactions' %}"><i class="bi bi-arrow-left-right"></i> Transactions</a>
-        <a href="{% url 'report_dashboard' %}"><i class="bi bi-bar-chart"></i> Reports</a>
-        <a href="{% url 'settings' %}"><i class="bi bi-gear"></i> Settings</a>
-        <a href="{% url 'logout' %}" class=""><i class="bi bi-box-arrow-right"></i> Logout</a>
+        <a href="{% url 'logout' %}"><i class="bi bi-box-arrow-right"></i> Logout</a>
     </div>
 
     <!-- TOPBAR -->
     <div class="topbar">
         <div class="fw-bold fs-5">Welcome Admin!</div>
-
-        <div>
-            <i class="bi bi-bell me-3 fs-5"></i>
-            <i class="bi bi-person-circle fs-4"></i>
-        </div>
     </div>
 
     <!-- MAIN CONTENT -->
     <div class="main">
 
-        <h3 class="mb-4">Dashboard Overview</h3>
+        <h3 class="mb-4 text-white">Dashboard Overview</h3>
 
         <!-- METRICS -->
         <div class="row g-4 mb-4">
 
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <div class="metric-box">
                     <div class="metric-title">Total Products</div>
                     <div class="metric-value">{{ total_products }}</div>
                 </div>
             </div>
 
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <div class="metric-box">
                     <div class="metric-title">Total Users</div>
                     <div class="metric-value">{{ total_users }}</div>
                 </div>
             </div>
 
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <div class="metric-box">
                     <div class="metric-title">Total Suppliers</div>
                     <div class="metric-value">{{ total_suppliers }}</div>
-                </div>
-            </div>
-
-            <div class="col-md-3">
-                <div class="metric-box">
-                    <div class="metric-title">Total Transactions</div>
-                    <div class="metric-value">{{ total_transactions }}</div>
                 </div>
             </div>
 
@@ -175,31 +169,52 @@
 
         <!-- CHART SECTION -->
         <div class="chart-box">
-            <h5 class="mb-3">Sales Analytics</h5>
+            <h5 class="mb-3 text-white">Sales vs Purchases Analytics</h5>
 
-            <canvas id="salesChart" height="120"></canvas>
+            <canvas id="SalesChart" height="120"></canvas>
         </div>
 
     </div>
 
-    <!-- OPTIONAL: Chart.js -->
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <script>
-    const ctx = document.getElementById('salesChart');
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-            datasets: [{
+        const ctx = document.getElementById('SalesChart');
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: {{ sales_labels| safe }},
+            datasets: [
+            {
                 label: "Sales",
-                data: [12, 19, 14, 22, 18],
-                borderWidth: 2
-            }]
+                data: {{ sales_values| safe }},
+            borderWidth: 2,
+            borderColor: "#0d6efd",
+            backgroundColor: "rgba(13,110,253,0.3)",
+            tension: 0.4
+                },
+            {
+                label: "Purchases",
+                data: {{ purchase_values| safe }},
+            borderWidth: 2,
+            borderColor: "#ffc107",
+            backgroundColor: "rgba(255,193,7,0.3)",
+            tension: 0.4
+                }
+        ]
+        },
+            options: {
+            plugins: { legend: { labels: { color: '#fff' } } },
+            scales: {
+                x: { ticks: { color: '#bbb' }, grid: { color: '#333' } },
+                y: { ticks: { color: '#bbb' }, grid: { color: '#333' } }
+            }
         }
     });
     </script>
 
 </body>
-</html>
 
+</html>
